@@ -6,8 +6,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/msiuda/localops/internal/doctor"
+	"github.com/msiuda/localops/internal/overview"
 	"github.com/msiuda/localops/internal/project"
 	"github.com/msiuda/localops/internal/storage"
 )
@@ -37,6 +39,8 @@ func run(args []string, getStore storeFunc, out io.Writer) error {
 		return runProject(args[1:], getStore, out)
 	case "doctor":
 		return runDoctor(args[1:], out)
+	case "overview":
+		return runOverview(args[1:], getStore, out)
 	default:
 		return usageError()
 	}
@@ -206,6 +210,139 @@ func runDoctor(args []string, out io.Writer) error {
 	return nil
 }
 
+func runOverview(args []string, getStore storeFunc, out io.Writer) error {
+	if len(args) == 1 && isHelpFlag(args[0]) {
+		fmt.Fprint(out, overviewHelp)
+		return nil
+	}
+	if len(args) != 0 {
+		return fmt.Errorf("usage: localops overview")
+	}
+
+	store, err := getStore()
+	if err != nil {
+		return fmt.Errorf("overview: %w", err)
+	}
+
+	projects, err := store.Load()
+	if err != nil {
+		return fmt.Errorf("overview: %w", err)
+	}
+
+	if len(projects) == 0 {
+		fmt.Fprintln(out, "No projects registered.")
+		fmt.Fprintln(out)
+		fmt.Fprintln(out, "Register one with:")
+		fmt.Fprintln(out, "  localops project add <path>")
+		return nil
+	}
+
+	result := overview.Build(projects)
+
+	fmt.Fprintln(out, "LocalOps Overview")
+	fmt.Fprintln(out)
+
+	var healthy, withIssues, unavailable int
+	for _, pr := range result.Projects {
+		printOverviewProject(out, pr)
+		fmt.Fprintln(out)
+
+		switch pr.Health {
+		case overview.HealthHealthy:
+			healthy++
+		case overview.HealthIssues:
+			withIssues++
+		case overview.HealthUnavailable:
+			unavailable++
+		}
+	}
+
+	fmt.Fprintf(out, "%d projects: %d healthy, %d with issues, %d unavailable\n",
+		len(result.Projects), healthy, withIssues, unavailable)
+
+	return nil
+}
+
+// printOverviewProject prints a single project's Overview result in the
+// format described by "localops overview help".
+func printOverviewProject(out io.Writer, pr overview.ProjectResult) {
+	switch pr.Health {
+	case overview.HealthHealthy:
+		fmt.Fprintf(out, "[OK] %s\n", pr.Project.Name)
+	case overview.HealthIssues:
+		fmt.Fprintf(out, "[ISSUES] %s\n", pr.Project.Name)
+	default:
+		fmt.Fprintf(out, "[UNAVAILABLE] %s\n", pr.Project.Name)
+	}
+	fmt.Fprintf(out, "  %s\n", pr.Project.Path)
+
+	if pr.Health == overview.HealthUnavailable {
+		fmt.Fprintf(out, "  %s\n", pr.Err)
+		return
+	}
+
+	fmt.Fprintf(out, "  %s\n", technologySummary(pr.Inspection, pr.Report))
+
+	var failed []doctor.CheckResult
+	for _, check := range pr.Report.Checks {
+		if !check.OK {
+			failed = append(failed, check)
+		}
+	}
+
+	switch len(failed) {
+	case 0:
+		fmt.Fprintln(out, "  No issues")
+	case 1:
+		fmt.Fprintln(out, "  1 issue")
+	default:
+		fmt.Fprintf(out, "  %d issues\n", len(failed))
+	}
+	for _, check := range failed {
+		fmt.Fprintf(out, "  - %s — %s\n", check.Tool, check.Detail)
+	}
+}
+
+// technologySummary builds a short "Git · Go · Node.js · yarn"-style
+// summary of the technologies insp detected. For the package manager, it
+// reflects the manager Doctor actually evaluated (report), which may differ
+// from the lockfile-detected one when package.json declares one instead.
+func technologySummary(insp project.Inspection, report doctor.Report) string {
+	var parts []string
+
+	if insp.IsGitRepository {
+		parts = append(parts, "Git")
+	}
+	if insp.HasGoMod {
+		parts = append(parts, "Go")
+	}
+	if insp.IsNodeProject {
+		parts = append(parts, "Node.js")
+		if manager := effectivePackageManager(report); manager != "" {
+			parts = append(parts, manager)
+		}
+	}
+
+	if len(parts) == 0 {
+		return "No detected technologies"
+	}
+
+	return strings.Join(parts, " · ")
+}
+
+// effectivePackageManager returns the package manager Doctor actually
+// checked, derived from report's checks rather than duplicating Doctor's
+// own declared/lockfile reconciliation logic.
+func effectivePackageManager(report doctor.Report) string {
+	for _, check := range report.Checks {
+		switch check.Tool {
+		case "npm", "yarn", "pnpm":
+			return check.Tool
+		}
+	}
+	return ""
+}
+
 func defaultStore() (*storage.Store, error) {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
@@ -220,10 +357,12 @@ const topLevelHelp = `Usage:
   localops <command>
 
 Commands:
-  project   Manage and inspect local projects
-  doctor    Diagnose a local project
+  project    Manage and inspect local projects
+  doctor     Diagnose a local project
+  overview   Show a health summary of all registered projects
 
-Run 'localops project help' or 'localops doctor --help' for details.
+Run 'localops project help', 'localops doctor --help', or
+'localops overview --help' for details.
 `
 
 const projectHelp = `Usage:
@@ -242,6 +381,14 @@ flags Node/npm versions or a package manager that don't match what the
 project declares (engines.node, engines.npm, and packageManager).
 `
 
+const overviewHelp = `Usage:
+  localops overview
+
+Loads every registered project, inspects it, runs Doctor against it, and
+prints a concise summary of its health: healthy, has issues, or
+unavailable (for example, if its registered path no longer exists).
+`
+
 // isHelpFlag reports whether arg requests help rather than naming a
 // subcommand or path.
 func isHelpFlag(arg string) bool {
@@ -249,5 +396,5 @@ func isHelpFlag(arg string) bool {
 }
 
 func usageError() error {
-	return fmt.Errorf("usage: localops <project|doctor> ...")
+	return fmt.Errorf("usage: localops <project|doctor|overview> ...")
 }

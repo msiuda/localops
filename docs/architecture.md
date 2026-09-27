@@ -96,6 +96,8 @@ localops/
 │
 ├── internal/
 │   ├── project/
+│   ├── doctor/
+│   ├── overview/
 │   └── storage/
 │
 ├── docs/
@@ -181,6 +183,32 @@ Individual detectors should remain small and focused.
 Do not create a plugin system for detectors during the initial milestone.
 
 A simple collection of explicit detection functions is preferred until extensibility becomes an actual problem.
+
+---
+
+## Overview module
+
+The `overview` package combines project registration, project inspection, and Doctor into a single structured view of every registered project's health.
+
+Overview depends on `project` and `doctor`. Neither `project`, `doctor`, nor `storage` depends on Overview:
+
+```text
+overview
+  ├── project
+  └── doctor
+
+CLI
+  ├── storage
+  └── overview
+```
+
+The CLI loads registered projects from `storage` and passes them into Overview; Overview itself never reads or writes LocalOps storage.
+
+Overview evaluates each registered project independently. A project that cannot be inspected (for example, its path no longer exists) is reported as unavailable rather than aborting the rest.
+
+Overview assigns each project one of three health states: healthy, issues, or unavailable. This is intentionally a small, explicit model, not a generic severity or diagnostics framework.
+
+Overview composes `project.Inspect` and `doctor.Run` rather than duplicating their logic. Presentation (CLI output formatting) remains in the command layer, not in Overview.
 
 ---
 

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/msiuda/localops/internal/project"
 	"github.com/msiuda/localops/internal/storage"
 )
 
@@ -136,6 +137,98 @@ func TestRun_Doctor_InvalidPath(t *testing.T) {
 	}
 }
 
+func TestRun_Overview_Empty(t *testing.T) {
+	store := newTestStore(t)
+	var out bytes.Buffer
+
+	if err := run([]string{"overview"}, testStoreFunc(store), &out); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+
+	got := out.String()
+	if !strings.Contains(got, "No projects registered.") {
+		t.Errorf("output = %q, want the empty-registry message", got)
+	}
+	if !strings.Contains(got, "localops project add <path>") {
+		t.Errorf("output = %q, want a hint to register a project", got)
+	}
+}
+
+func TestRun_Overview_HealthyAndUnavailable(t *testing.T) {
+	store := newTestStore(t)
+
+	healthyDir := t.TempDir()
+	missingDir := filepath.Join(t.TempDir(), "missing")
+
+	projects := []project.Project{
+		{Name: filepath.Base(healthyDir), Path: healthyDir},
+		{Name: "gone", Path: missingDir},
+	}
+	if err := store.Save(projects); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	var out bytes.Buffer
+	if err := run([]string{"overview"}, testStoreFunc(store), &out); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+
+	got := out.String()
+	if !strings.Contains(got, "[OK] "+filepath.Base(healthyDir)) {
+		t.Errorf("output = %q, want the healthy project marked [OK]", got)
+	}
+	if !strings.Contains(got, "No issues") {
+		t.Errorf("output = %q, want the healthy project to report no issues", got)
+	}
+	if !strings.Contains(got, "[UNAVAILABLE] gone") {
+		t.Errorf("output = %q, want the missing project marked [UNAVAILABLE]", got)
+	}
+	if !strings.Contains(got, "2 projects: 1 healthy, 0 with issues, 1 unavailable") {
+		t.Errorf("output = %q, want a matching summary line", got)
+	}
+}
+
+func TestRun_Overview_TechnologySummaryUsesDoctorEffectiveManager(t *testing.T) {
+	store := newTestStore(t)
+	projectDir := t.TempDir()
+
+	packageJSON := `{"name": "demo", "packageManager": "pnpm@10.4.1"}`
+	if err := os.WriteFile(filepath.Join(projectDir, "package.json"), []byte(packageJSON), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectDir, "yarn.lock"), []byte(""), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	if err := store.Save([]project.Project{{Name: filepath.Base(projectDir), Path: projectDir}}); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	var out bytes.Buffer
+	if err := run([]string{"overview"}, testStoreFunc(store), &out); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+
+	// package.json declares pnpm, but the lockfile is yarn.lock: Doctor
+	// reconciles this to pnpm as the effective manager (and reports the
+	// mismatch as an issue), so the summary must reflect pnpm, not yarn.
+	got := out.String()
+	if !strings.Contains(got, "Node.js · pnpm") {
+		t.Errorf("output = %q, want the technology summary to show pnpm (Doctor's effective manager)", got)
+	}
+	if strings.Contains(got, "Node.js · yarn") {
+		t.Errorf("output = %q, want it not to show yarn (the lockfile-detected manager) as the summary", got)
+	}
+}
+
+func TestRun_Overview_LoadFailure(t *testing.T) {
+	var out bytes.Buffer
+
+	if err := run([]string{"overview"}, failingStoreFunc(), &out); err == nil {
+		t.Fatal("run() error = nil, want an error when the store cannot be resolved")
+	}
+}
+
 func TestRun_Help(t *testing.T) {
 	tests := []struct {
 		name string
@@ -148,6 +241,8 @@ func TestRun_Help(t *testing.T) {
 		{name: "project help", args: []string{"project", "help"}, want: projectHelp},
 		{name: "doctor --help", args: []string{"doctor", "--help"}, want: doctorHelp},
 		{name: "doctor help", args: []string{"doctor", "help"}, want: doctorHelp},
+		{name: "overview --help", args: []string{"overview", "--help"}, want: overviewHelp},
+		{name: "overview help", args: []string{"overview", "help"}, want: overviewHelp},
 	}
 
 	for _, tt := range tests {
@@ -182,6 +277,7 @@ func TestRun_InvalidArguments(t *testing.T) {
 		{name: "inspect missing path", args: []string{"project", "inspect", filepath.Join(t.TempDir(), "missing")}},
 		{name: "doctor without path", args: []string{"doctor"}},
 		{name: "doctor with too many arguments", args: []string{"doctor", "a", "b"}},
+		{name: "overview with unexpected argument", args: []string{"overview", "extra"}},
 	}
 
 	for _, tt := range tests {

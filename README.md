@@ -38,6 +38,16 @@ tools a project needs.
   Doctor does not compare Go versions, does not inspect `.nvmrc`,
   `.node-version`, Volta, or Corepack configuration, and does not run
   builds, installs, project scripts, or any other project commands.
+- **Overview**: loads every registered project and, for each one
+  independently, inspects it and runs Doctor against it, then reports its
+  health as one of:
+  - **healthy** — inspection and Doctor both ran and every Doctor check
+    passed,
+  - **issues** — inspection and Doctor both ran but at least one Doctor
+    check did not pass (the failed checks are listed),
+  - **unavailable** — the registered path could no longer be inspected
+    (for example, it no longer exists). An unavailable project does not
+    stop the rest of the overview from running.
 
 Everything above is read-only with respect to the project being inspected.
 
@@ -49,16 +59,18 @@ localops project add <path>
 localops project list
 localops project inspect <path>
 localops doctor <path>
+localops overview
 ```
 
-Run `localops help`, `localops project help`, or `localops doctor --help`
-for details on any command.
+Run `localops help`, `localops project help`, `localops doctor --help`, or
+`localops overview --help` for details on any command.
 
 ## Running from the repository
 
 ```bash
 go run ./cmd/localops project inspect .
 go run ./cmd/localops doctor .
+go run ./cmd/localops overview
 ```
 
 ## Building
@@ -84,6 +96,8 @@ on your `PATH` to run `localops` directly.
 From inside a project you want to look at:
 
 ```bash
+go run ./cmd/localops project add .
+go run ./cmd/localops overview
 go run ./cmd/localops project inspect .
 go run ./cmd/localops doctor .
 ```
@@ -91,8 +105,8 @@ go run ./cmd/localops doctor .
 After installing:
 
 ```bash
+localops project add .
+localops overview
 localops project inspect .
 localops doctor .
-localops project add .
-localops project list
 ```

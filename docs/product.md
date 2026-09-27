@@ -73,6 +73,25 @@ A useful diagnostic should explain:
 3. why it may be a problem,
 4. what can be done about it.
 
+## Project Overview
+
+Overview gives a single, at-a-glance view of every registered project's
+health, combining project registration, project inspection, and Doctor.
+
+For each registered project, Overview reports whether it is:
+
+- healthy — inspected successfully and every Doctor check passed,
+- has issues — inspected successfully but at least one Doctor check did
+  not pass,
+- unavailable — its registered path could not be inspected (for example,
+  it no longer exists).
+
+A project that is unavailable does not prevent the rest of the registered
+projects from being evaluated.
+
+Overview does not introduce new detection or diagnostics of its own; it
+composes the existing project inspection and Doctor capabilities.
+
 ## Future direction
 
 LocalOps may later support:
