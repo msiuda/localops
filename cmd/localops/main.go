@@ -127,6 +127,13 @@ func runProjectInspect(args []string, out io.Writer) error {
 	if insp.HasGoMod {
 		fmt.Fprintf(out, "Go module path: %s\n", insp.GoModulePath)
 	}
+	fmt.Fprintf(out, "Node.js project: %t\n", insp.IsNodeProject)
+	if insp.NodePackageName != "" {
+		fmt.Fprintf(out, "Node.js package name: %s\n", insp.NodePackageName)
+	}
+	if insp.NodePackageManager != "" {
+		fmt.Fprintf(out, "Node.js package manager: %s\n", insp.NodePackageManager)
+	}
 
 	return nil
 }
