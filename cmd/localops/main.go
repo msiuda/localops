@@ -30,6 +30,9 @@ func run(args []string, getStore storeFunc, out io.Writer) error {
 	}
 
 	switch args[0] {
+	case "help", "--help", "-h":
+		fmt.Fprint(out, topLevelHelp)
+		return nil
 	case "project":
 		return runProject(args[1:], getStore, out)
 	case "doctor":
@@ -45,6 +48,9 @@ func runProject(args []string, getStore storeFunc, out io.Writer) error {
 	}
 
 	switch args[0] {
+	case "help", "--help", "-h":
+		fmt.Fprint(out, projectHelp)
+		return nil
 	case "add":
 		return runProjectAdd(args[1:], getStore, out)
 	case "list":
@@ -142,6 +148,10 @@ func runProjectInspect(args []string, out io.Writer) error {
 }
 
 func runDoctor(args []string, out io.Writer) error {
+	if len(args) == 1 && isHelpFlag(args[0]) {
+		fmt.Fprint(out, doctorHelp)
+		return nil
+	}
 	if len(args) != 1 {
 		return fmt.Errorf("usage: localops doctor <path>")
 	}
@@ -191,6 +201,36 @@ func defaultStore() (*storage.Store, error) {
 
 	path := filepath.Join(configDir, "localops", "projects.json")
 	return storage.New(path), nil
+}
+
+const topLevelHelp = `Usage:
+  localops <command>
+
+Commands:
+  project   Manage and inspect local projects
+  doctor    Diagnose a local project
+
+Run 'localops project help' or 'localops doctor --help' for details.
+`
+
+const projectHelp = `Usage:
+  localops project add <path>       Register a local project
+  localops project list             List registered projects
+  localops project inspect <path>   Inspect a project's filesystem metadata
+`
+
+const doctorHelp = `Usage:
+  localops doctor <path>
+
+Checks whether the local machine has the executables required by the
+technologies detected in the project at <path> (Git, Go modules, Node.js
+and its package manager).
+`
+
+// isHelpFlag reports whether arg requests help rather than naming a
+// subcommand or path.
+func isHelpFlag(arg string) bool {
+	return arg == "help" || arg == "--help" || arg == "-h"
 }
 
 func usageError() error {

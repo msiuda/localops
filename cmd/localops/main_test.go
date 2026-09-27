@@ -136,6 +136,35 @@ func TestRun_Doctor_InvalidPath(t *testing.T) {
 	}
 }
 
+func TestRun_Help(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "top-level --help", args: []string{"--help"}, want: topLevelHelp},
+		{name: "top-level help", args: []string{"help"}, want: topLevelHelp},
+		{name: "project --help", args: []string{"project", "--help"}, want: projectHelp},
+		{name: "project help", args: []string{"project", "help"}, want: projectHelp},
+		{name: "doctor --help", args: []string{"doctor", "--help"}, want: doctorHelp},
+		{name: "doctor help", args: []string{"doctor", "help"}, want: doctorHelp},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var out bytes.Buffer
+
+			if err := run(tt.args, failingStoreFunc(), &out); err != nil {
+				t.Fatalf("run(%v) error = %v", tt.args, err)
+			}
+
+			if out.String() != tt.want {
+				t.Errorf("run(%v) output = %q, want %q", tt.args, out.String(), tt.want)
+			}
+		})
+	}
+}
+
 func TestRun_InvalidArguments(t *testing.T) {
 	tests := []struct {
 		name string
