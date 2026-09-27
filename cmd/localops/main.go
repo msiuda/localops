@@ -181,8 +181,12 @@ func runDoctor(args []string, out io.Writer) error {
 
 	issues := 0
 	for _, check := range report.Checks {
-		if check.Available && check.Version != "" {
-			fmt.Fprintf(out, "[OK] %s — %s\n", check.Tool, check.Version)
+		if check.OK {
+			if check.Note != "" {
+				fmt.Fprintf(out, "[OK] %s — %s (%s)\n", check.Tool, check.Version, check.Note)
+			} else {
+				fmt.Fprintf(out, "[OK] %s — %s\n", check.Tool, check.Version)
+			}
 			continue
 		}
 		issues++
@@ -233,7 +237,9 @@ const doctorHelp = `Usage:
 
 Checks whether the local machine has the executables required by the
 technologies detected in the project at <path> (Git, Go modules, Node.js
-and its package manager).
+and its package manager), reports their versions, and for Node.js projects
+flags Node/npm versions or a package manager that don't match what the
+project declares (engines.node, engines.npm, and packageManager).
 `
 
 // isHelpFlag reports whether arg requests help rather than naming a

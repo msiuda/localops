@@ -2,6 +2,7 @@ package doctor
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/msiuda/localops/internal/project"
@@ -56,6 +57,15 @@ func callFor(t *testing.T, calls []versionCall, tool string) versionCall {
 	}
 	t.Fatalf("no version call found for tool %q in %v", tool, calls)
 	return versionCall{}
+}
+
+func hasCheckFor(checks []CheckResult, tool string) bool {
+	for _, c := range checks {
+		if c.Tool == tool {
+			return true
+		}
+	}
+	return false
 }
 
 func argsEqual(a, b []string) bool {
@@ -368,6 +378,480 @@ func TestRun_VersionArgs(t *testing.T) {
 				t.Errorf("args for %s = %v, want %v", tt.tool, call.args, tt.want)
 			}
 		})
+	}
+}
+
+func TestRun_NodeVersion_Satisfies(t *testing.T) {
+	insp := project.Inspection{IsNodeProject: true, NodeEngineNode: ">=20 <23"}
+
+	report := run(
+		insp,
+		fakeLookPath(map[string]string{"node": "/usr/bin/node"}),
+		fakeRunVersion(map[string]string{"node": "v22.14.0"}, nil, nil),
+	)
+
+	got := checkFor(t, report.Checks, "node")
+	if !got.OK {
+		t.Errorf("node OK = false, want true: %+v", got)
+	}
+	if got.Note == "" {
+		t.Error("Note is empty, want it to mention the requirement")
+	}
+}
+
+func TestRun_NodeVersion_Violates(t *testing.T) {
+	insp := project.Inspection{IsNodeProject: true, NodeEngineNode: ">=20 <23"}
+
+	report := run(
+		insp,
+		fakeLookPath(map[string]string{"node": "/usr/bin/node"}),
+		fakeRunVersion(map[string]string{"node": "v24.1.0"}, nil, nil),
+	)
+
+	got := checkFor(t, report.Checks, "node")
+	if got.OK {
+		t.Error("node OK = true, want false for a version outside the requirement")
+	}
+	if !strings.Contains(got.Detail, "does not satisfy") {
+		t.Errorf("Detail = %q, want it to explain the mismatch", got.Detail)
+	}
+}
+
+func TestRun_NodeVersion_LeadingV(t *testing.T) {
+	insp := project.Inspection{IsNodeProject: true, NodeEngineNode: ">=20 <21"}
+
+	report := run(
+		insp,
+		fakeLookPath(map[string]string{"node": "/usr/bin/node"}),
+		fakeRunVersion(map[string]string{"node": "v20.5.0"}, nil, nil),
+	)
+
+	got := checkFor(t, report.Checks, "node")
+	if !got.OK {
+		t.Fatalf("node OK = false, want true: %+v", got)
+	}
+	if got.Version != "v20.5.0" {
+		t.Errorf("Version = %q, want the raw output %q preserved for display", got.Version, "v20.5.0")
+	}
+}
+
+func TestRun_NodeVersion_InvalidConstraint(t *testing.T) {
+	insp := project.Inspection{IsNodeProject: true, NodeEngineNode: ">>>not-a-constraint<<<"}
+
+	report := run(
+		insp,
+		fakeLookPath(map[string]string{"node": "/usr/bin/node"}),
+		fakeRunVersion(map[string]string{"node": "v22.14.0"}, nil, nil),
+	)
+
+	got := checkFor(t, report.Checks, "node")
+	if got.OK {
+		t.Error("node OK = true, want false for an unparsable constraint")
+	}
+	if got.Detail == "" {
+		t.Error("Detail is empty, want an explanation of the invalid constraint")
+	}
+}
+
+func TestRun_NodeVersion_UnparsableInstalledVersion(t *testing.T) {
+	insp := project.Inspection{IsNodeProject: true, NodeEngineNode: ">=20 <23"}
+
+	report := run(
+		insp,
+		fakeLookPath(map[string]string{"node": "/usr/bin/node"}),
+		fakeRunVersion(map[string]string{"node": "not-a-version"}, nil, nil),
+	)
+
+	got := checkFor(t, report.Checks, "node")
+	if got.OK {
+		t.Error("node OK = true, want false for an unparsable installed version")
+	}
+	if got.Detail == "" {
+		t.Error("Detail is empty, want an explanation that the version could not be parsed")
+	}
+}
+
+func TestRun_PackageManager_DeclaredMatchesLockfile(t *testing.T) {
+	insp := project.Inspection{
+		IsNodeProject:              true,
+		NodePackageManager:         "pnpm",
+		NodeDeclaredPackageManager: "pnpm@10.4.1",
+	}
+
+	report := run(
+		insp,
+		fakeLookPath(map[string]string{"node": "/usr/bin/node", "pnpm": "/usr/bin/pnpm"}),
+		fakeRunVersion(map[string]string{"node": "v22.14.0", "pnpm": "10.4.1"}, nil, nil),
+	)
+
+	if hasCheckFor(report.Checks, "package manager") {
+		t.Error("unexpected package manager mismatch finding when declared and lockfile agree")
+	}
+	got := checkFor(t, report.Checks, "pnpm")
+	if !got.OK {
+		t.Errorf("pnpm OK = false, want true: %+v", got)
+	}
+}
+
+func TestRun_PackageManager_ConflictsWithLockfile(t *testing.T) {
+	insp := project.Inspection{
+		IsNodeProject:              true,
+		NodePackageManager:         "yarn",
+		NodeDeclaredPackageManager: "pnpm@10.4.1",
+	}
+
+	report := run(
+		insp,
+		fakeLookPath(map[string]string{"node": "/usr/bin/node", "pnpm": "/usr/bin/pnpm", "yarn": "/usr/bin/yarn"}),
+		fakeRunVersion(map[string]string{"node": "v22.14.0", "pnpm": "10.4.1", "yarn": "1.22.22"}, nil, nil),
+	)
+
+	got := checkFor(t, report.Checks, "package manager")
+	if got.OK {
+		t.Error("package manager OK = true, want false for a declared/lockfile mismatch")
+	}
+	if !strings.Contains(got.Detail, "pnpm") || !strings.Contains(got.Detail, "yarn") {
+		t.Errorf("Detail = %q, want it to mention both managers", got.Detail)
+	}
+
+	if !hasCheckFor(report.Checks, "pnpm") {
+		t.Error("want pnpm to still be checked as the effective (declared) manager")
+	}
+	if hasCheckFor(report.Checks, "yarn") {
+		t.Error("yarn should not be checked when pnpm is the effective (declared) manager")
+	}
+}
+
+func TestRun_PackageManager_DeclaredNoLockfile(t *testing.T) {
+	insp := project.Inspection{
+		IsNodeProject:              true,
+		NodeDeclaredPackageManager: "yarn@4.6.0",
+	}
+
+	report := run(
+		insp,
+		fakeLookPath(map[string]string{"node": "/usr/bin/node", "yarn": "/usr/bin/yarn"}),
+		fakeRunVersion(map[string]string{"node": "v22.14.0", "yarn": "4.6.0"}, nil, nil),
+	)
+
+	if hasCheckFor(report.Checks, "package manager") {
+		t.Error("unexpected package manager mismatch finding when no lockfile is present")
+	}
+	got := checkFor(t, report.Checks, "yarn")
+	if !got.OK {
+		t.Errorf("yarn OK = false, want true: %+v", got)
+	}
+}
+
+func TestRun_PackageManager_MissingDeclaredExecutable(t *testing.T) {
+	insp := project.Inspection{
+		IsNodeProject:              true,
+		NodeDeclaredPackageManager: "yarn@4.6.0",
+	}
+
+	report := run(
+		insp,
+		fakeLookPath(map[string]string{"node": "/usr/bin/node"}),
+		fakeRunVersion(map[string]string{"node": "v22.14.0"}, nil, nil),
+	)
+
+	got := checkFor(t, report.Checks, "yarn")
+	if got.OK {
+		t.Error("yarn OK = true, want false for a missing executable")
+	}
+	if !strings.Contains(got.Detail, "not found") {
+		t.Errorf("Detail = %q, want it to mention the executable is missing", got.Detail)
+	}
+	if !strings.Contains(got.Detail, "yarn@4.6.0") {
+		t.Errorf("Detail = %q, want it to mention the declared package manager", got.Detail)
+	}
+}
+
+func TestRun_PackageManager_ExactVersionMatches(t *testing.T) {
+	insp := project.Inspection{
+		IsNodeProject:              true,
+		NodePackageManager:         "pnpm",
+		NodeDeclaredPackageManager: "pnpm@10.4.1",
+	}
+
+	report := run(
+		insp,
+		fakeLookPath(map[string]string{"node": "/usr/bin/node", "pnpm": "/usr/bin/pnpm"}),
+		fakeRunVersion(map[string]string{"node": "v22.14.0", "pnpm": "10.4.1"}, nil, nil),
+	)
+
+	got := checkFor(t, report.Checks, "pnpm")
+	if !got.OK {
+		t.Fatalf("pnpm OK = false, want true: %+v", got)
+	}
+	if got.Note == "" {
+		t.Error("Note is empty, want it to mention the declared version")
+	}
+}
+
+func TestRun_PackageManager_ExactVersionMismatches(t *testing.T) {
+	insp := project.Inspection{
+		IsNodeProject:              true,
+		NodePackageManager:         "pnpm",
+		NodeDeclaredPackageManager: "pnpm@10.4.1",
+	}
+
+	report := run(
+		insp,
+		fakeLookPath(map[string]string{"node": "/usr/bin/node", "pnpm": "/usr/bin/pnpm"}),
+		fakeRunVersion(map[string]string{"node": "v22.14.0", "pnpm": "9.15.0"}, nil, nil),
+	)
+
+	got := checkFor(t, report.Checks, "pnpm")
+	if got.OK {
+		t.Error("pnpm OK = true, want false for a version mismatch")
+	}
+	if !strings.Contains(got.Detail, "9.15.0") || !strings.Contains(got.Detail, "10.4.1") {
+		t.Errorf("Detail = %q, want it to mention both versions", got.Detail)
+	}
+}
+
+func TestRun_NpmEngines_Satisfies(t *testing.T) {
+	insp := project.Inspection{
+		IsNodeProject:      true,
+		NodePackageManager: "npm",
+		NodeEngineNpm:      ">=10",
+	}
+
+	report := run(
+		insp,
+		fakeLookPath(map[string]string{"node": "/usr/bin/node", "npm": "/usr/bin/npm"}),
+		fakeRunVersion(map[string]string{"node": "v22.14.0", "npm": "10.9.2"}, nil, nil),
+	)
+
+	got := checkFor(t, report.Checks, "npm")
+	if !got.OK {
+		t.Errorf("npm OK = false, want true: %+v", got)
+	}
+}
+
+func TestRun_NpmEngines_Mismatch(t *testing.T) {
+	insp := project.Inspection{
+		IsNodeProject:      true,
+		NodePackageManager: "npm",
+		NodeEngineNpm:      ">=10",
+	}
+
+	report := run(
+		insp,
+		fakeLookPath(map[string]string{"node": "/usr/bin/node", "npm": "/usr/bin/npm"}),
+		fakeRunVersion(map[string]string{"node": "v22.14.0", "npm": "9.8.1"}, nil, nil),
+	)
+
+	got := checkFor(t, report.Checks, "npm")
+	if got.OK {
+		t.Error("npm OK = true, want false for an engines.npm mismatch")
+	}
+	if !strings.Contains(got.Detail, "does not satisfy") {
+		t.Errorf("Detail = %q, want it to explain the mismatch", got.Detail)
+	}
+}
+
+func TestRun_NpmEngines_IgnoredForOtherManagers(t *testing.T) {
+	for _, manager := range []string{"yarn", "pnpm"} {
+		t.Run(manager, func(t *testing.T) {
+			insp := project.Inspection{
+				IsNodeProject:      true,
+				NodePackageManager: manager,
+				NodeEngineNpm:      ">=10",
+			}
+
+			report := run(
+				insp,
+				fakeLookPath(map[string]string{"node": "/usr/bin/node", manager: "/usr/bin/" + manager}),
+				fakeRunVersion(map[string]string{"node": "v22.14.0", manager: "1.0.0"}, nil, nil),
+			)
+
+			if hasCheckFor(report.Checks, "npm") {
+				t.Error("npm should not be checked when engines.npm is declared but the effective manager is not npm")
+			}
+			got := checkFor(t, report.Checks, manager)
+			if !got.OK {
+				t.Errorf("%s OK = false, want true: %+v", manager, got)
+			}
+		})
+	}
+}
+
+func TestRun_OneCompatibilityFailureDoesNotStopOthers(t *testing.T) {
+	insp := project.Inspection{
+		IsGitRepository:            true,
+		HasGoMod:                   true,
+		IsNodeProject:              true,
+		NodeEngineNode:             ">=20 <23",
+		NodePackageManager:         "pnpm",
+		NodeDeclaredPackageManager: "pnpm@10.4.1",
+	}
+
+	report := run(
+		insp,
+		fakeLookPath(map[string]string{
+			"git": "/usr/bin/git", "go": "/usr/bin/go", "node": "/usr/bin/node", "pnpm": "/usr/bin/pnpm",
+		}),
+		fakeRunVersion(map[string]string{
+			"git":  "git version 2.50.1",
+			"go":   "go version go1.27.1 darwin/arm64",
+			"node": "v24.1.0",
+			"pnpm": "10.4.1",
+		}, nil, nil),
+	)
+
+	if len(report.Checks) != 4 {
+		t.Fatalf("Checks = %v, want exactly four checks", report.Checks)
+	}
+	if got := checkFor(t, report.Checks, "node"); got.OK {
+		t.Error("node OK = true, want false (version violates requirement)")
+	}
+	for _, tool := range []string{"git", "go", "pnpm"} {
+		if got := checkFor(t, report.Checks, tool); !got.OK {
+			t.Errorf("%s OK = false, want true despite node's failure", tool)
+		}
+	}
+}
+
+func TestRun_PackageManager_UnsupportedDeclaration(t *testing.T) {
+	insp := project.Inspection{
+		IsNodeProject:              true,
+		NodeDeclaredPackageManager: "bun@1.2.0",
+	}
+
+	report := run(
+		insp,
+		fakeLookPath(map[string]string{"node": "/usr/bin/node"}),
+		fakeRunVersion(map[string]string{"node": "v22.14.0"}, nil, nil),
+	)
+
+	got := checkFor(t, report.Checks, "package manager")
+	if got.OK {
+		t.Error("package manager OK = true, want false for an unsupported declaration")
+	}
+	if !strings.Contains(got.Detail, "bun@1.2.0") {
+		t.Errorf("Detail = %q, want it to mention the unsupported declaration", got.Detail)
+	}
+
+	// With no lockfile manager and an unsupported declaration, there is no
+	// effective package manager to check further.
+	if hasCheckFor(report.Checks, "bun") {
+		t.Error("bun should never be checked as an executable")
+	}
+}
+
+func TestRun_PackageManager_MalformedDeclaration(t *testing.T) {
+	insp := project.Inspection{
+		IsNodeProject:              true,
+		NodeDeclaredPackageManager: "yarn",
+	}
+
+	report := run(
+		insp,
+		fakeLookPath(map[string]string{"node": "/usr/bin/node"}),
+		fakeRunVersion(map[string]string{"node": "v22.14.0"}, nil, nil),
+	)
+
+	got := checkFor(t, report.Checks, "package manager")
+	if got.OK {
+		t.Error("package manager OK = true, want false for a malformed declaration")
+	}
+	if !strings.Contains(got.Detail, "yarn") {
+		t.Errorf("Detail = %q, want it to mention the malformed value", got.Detail)
+	}
+}
+
+func TestRun_PackageManager_UnsupportedDeclarationWithLockfileFallback(t *testing.T) {
+	insp := project.Inspection{
+		IsNodeProject:              true,
+		NodePackageManager:         "npm",
+		NodeDeclaredPackageManager: "bun@1.2.0",
+	}
+
+	report := run(
+		insp,
+		fakeLookPath(map[string]string{"node": "/usr/bin/node", "npm": "/usr/bin/npm"}),
+		fakeRunVersion(map[string]string{"node": "v22.14.0", "npm": "10.9.2"}, nil, nil),
+	)
+
+	finding := checkFor(t, report.Checks, "package manager")
+	if finding.OK {
+		t.Error("package manager OK = true, want false for an unsupported declaration")
+	}
+	if !strings.Contains(finding.Detail, "bun@1.2.0") {
+		t.Errorf("Detail = %q, want it to mention the unsupported declaration", finding.Detail)
+	}
+
+	npmCheck := checkFor(t, report.Checks, "npm")
+	if !npmCheck.OK {
+		t.Errorf("npm OK = false, want true (falls back to the lockfile manager): %+v", npmCheck)
+	}
+}
+
+func TestRun_NpmRequirements_BothSatisfied(t *testing.T) {
+	insp := project.Inspection{
+		IsNodeProject:              true,
+		NodePackageManager:         "npm",
+		NodeDeclaredPackageManager: "npm@11.1.0",
+		NodeEngineNpm:              ">=10",
+	}
+
+	report := run(
+		insp,
+		fakeLookPath(map[string]string{"node": "/usr/bin/node", "npm": "/usr/bin/npm"}),
+		fakeRunVersion(map[string]string{"node": "v22.14.0", "npm": "11.1.0"}, nil, nil),
+	)
+
+	got := checkFor(t, report.Checks, "npm")
+	if !got.OK {
+		t.Errorf("npm OK = false, want true when both requirements are satisfied: %+v", got)
+	}
+}
+
+func TestRun_NpmRequirements_ExactSatisfiedEnginesViolated(t *testing.T) {
+	insp := project.Inspection{
+		IsNodeProject:              true,
+		NodePackageManager:         "npm",
+		NodeDeclaredPackageManager: "npm@11.1.0",
+		NodeEngineNpm:              "<11",
+	}
+
+	report := run(
+		insp,
+		fakeLookPath(map[string]string{"node": "/usr/bin/node", "npm": "/usr/bin/npm"}),
+		fakeRunVersion(map[string]string{"node": "v22.14.0", "npm": "11.1.0"}, nil, nil),
+	)
+
+	got := checkFor(t, report.Checks, "npm")
+	if got.OK {
+		t.Error("npm OK = true, want false when engines.npm is violated even though the exact version matches")
+	}
+	if !strings.Contains(got.Detail, "does not satisfy") {
+		t.Errorf("Detail = %q, want it to explain the engines.npm mismatch", got.Detail)
+	}
+}
+
+func TestRun_NpmRequirements_EnginesSatisfiedExactViolated(t *testing.T) {
+	insp := project.Inspection{
+		IsNodeProject:              true,
+		NodePackageManager:         "npm",
+		NodeDeclaredPackageManager: "npm@11.1.0",
+		NodeEngineNpm:              ">=10",
+	}
+
+	report := run(
+		insp,
+		fakeLookPath(map[string]string{"node": "/usr/bin/node", "npm": "/usr/bin/npm"}),
+		fakeRunVersion(map[string]string{"node": "v22.14.0", "npm": "10.9.0"}, nil, nil),
+	)
+
+	got := checkFor(t, report.Checks, "npm")
+	if got.OK {
+		t.Error("npm OK = true, want false when the exact declared version is violated even though engines.npm is satisfied")
+	}
+	if !strings.Contains(got.Detail, "10.9.0") || !strings.Contains(got.Detail, "11.1.0") {
+		t.Errorf("Detail = %q, want it to mention both versions", got.Detail)
 	}
 }
 

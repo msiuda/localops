@@ -20,9 +20,24 @@ tools a project needs.
   and its package manager) are available on your `PATH`. For each available
   executable, Doctor runs only its version command (e.g. `git --version`,
   `go version`, `node --version`) and reports the raw version output.
-  Doctor does not yet compare installed versions against what the project
-  declares it requires, and it does not run builds, installs, project
-  scripts, or any other project commands.
+  For Node.js projects, Doctor additionally:
+  - checks the installed Node.js version against `package.json`'s
+    `engines.node` requirement, when declared,
+  - reconciles the package manager declared by `package.json`'s
+    `packageManager` field with the one detected from a lockfile, flagging
+    a mismatch, or an unsupported/malformed `packageManager` value, as a
+    finding (falling back to the lockfile-detected manager, if any, so it
+    can still be checked),
+  - checks the effective package manager's installed version against the
+    exact version `packageManager` declares, when present,
+  - when npm is the effective package manager, checks its installed
+    version against both the exact version `packageManager` declares and
+    the `engines.npm` range, when either or both are present — both must
+    be satisfied.
+
+  Doctor does not compare Go versions, does not inspect `.nvmrc`,
+  `.node-version`, Volta, or Corepack configuration, and does not run
+  builds, installs, project scripts, or any other project commands.
 
 Everything above is read-only with respect to the project being inspected.
 
