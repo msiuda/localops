@@ -13,14 +13,17 @@ import (
 // Inspection is the basic metadata LocalOps can determine about a project
 // directory by reading its filesystem contents.
 type Inspection struct {
-	Name               string
-	Path               string
-	IsGitRepository    bool
-	HasGoMod           bool
-	GoModulePath       string
-	IsNodeProject      bool
-	NodePackageName    string
-	NodePackageManager string
+	Name                       string
+	Path                       string
+	IsGitRepository            bool
+	HasGoMod                   bool
+	GoModulePath               string
+	IsNodeProject              bool
+	NodePackageName            string
+	NodePackageManager         string
+	NodeEngineNode             string
+	NodeEngineNpm              string
+	NodeDeclaredPackageManager string
 }
 
 // Inspect reads basic, read-only metadata about the project at path.
@@ -51,7 +54,7 @@ func Inspect(path string) (Inspection, error) {
 		}
 	}
 
-	isNodeProject, nodePackageName, err := readNodePackageJSON(proj.Path)
+	isNodeProject, pkg, err := readNodePackageJSON(proj.Path)
 	if err != nil {
 		return Inspection{}, fmt.Errorf("inspect %q: %w", proj.Path, err)
 	}
@@ -65,14 +68,17 @@ func Inspect(path string) (Inspection, error) {
 	}
 
 	return Inspection{
-		Name:               proj.Name,
-		Path:               proj.Path,
-		IsGitRepository:    isGitRepo,
-		HasGoMod:           hasGoMod,
-		GoModulePath:       goModulePath,
-		IsNodeProject:      isNodeProject,
-		NodePackageName:    nodePackageName,
-		NodePackageManager: nodePackageManager,
+		Name:                       proj.Name,
+		Path:                       proj.Path,
+		IsGitRepository:            isGitRepo,
+		HasGoMod:                   hasGoMod,
+		GoModulePath:               goModulePath,
+		IsNodeProject:              isNodeProject,
+		NodePackageName:            pkg.Name,
+		NodePackageManager:         nodePackageManager,
+		NodeEngineNode:             pkg.Engines.Node,
+		NodeEngineNpm:              pkg.Engines.Npm,
+		NodeDeclaredPackageManager: pkg.PackageManager,
 	}, nil
 }
 
@@ -122,38 +128,48 @@ func readGoModulePath(path string) (string, error) {
 	return modFile.Module.Mod.Path, nil
 }
 
+// nodePackageJSON holds the package.json fields LocalOps reads during
+// inspection.
+type nodePackageJSON struct {
+	Name    string `json:"name"`
+	Engines struct {
+		Node string `json:"node"`
+		Npm  string `json:"npm"`
+	} `json:"engines"`
+	PackageManager string `json:"packageManager"`
+}
+
 // readNodePackageJSON reports whether dir contains a package.json file and,
-// if so, the package name declared by its top-level "name" field.
+// if so, the metadata declared by its top-level "name", "engines", and
+// "packageManager" fields.
 //
 // A package.json entry that is not a regular file, or that cannot be parsed
 // as JSON, is treated as an error rather than silently ignored.
-func readNodePackageJSON(dir string) (bool, string, error) {
+func readNodePackageJSON(dir string) (bool, nodePackageJSON, error) {
 	path := filepath.Join(dir, "package.json")
 
 	info, err := os.Stat(path)
 	if os.IsNotExist(err) {
-		return false, "", nil
+		return false, nodePackageJSON{}, nil
 	}
 	if err != nil {
-		return false, "", fmt.Errorf("check package.json: %w", err)
+		return false, nodePackageJSON{}, fmt.Errorf("check package.json: %w", err)
 	}
 	if !info.Mode().IsRegular() {
-		return false, "", fmt.Errorf("package.json at %q is not a regular file", path)
+		return false, nodePackageJSON{}, fmt.Errorf("package.json at %q is not a regular file", path)
 	}
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return false, "", fmt.Errorf("read package.json: %w", err)
+		return false, nodePackageJSON{}, fmt.Errorf("read package.json: %w", err)
 	}
 
-	var pkg struct {
-		Name string `json:"name"`
-	}
+	var pkg nodePackageJSON
 	if err := json.Unmarshal(data, &pkg); err != nil {
-		return false, "", fmt.Errorf("parse package.json: %w", err)
+		return false, nodePackageJSON{}, fmt.Errorf("parse package.json: %w", err)
 	}
 
-	return true, pkg.Name, nil
+	return true, pkg, nil
 }
 
 // detectNodePackageManager detects the Node.js package manager used by dir

@@ -157,6 +157,95 @@ func TestInspect_NodeProject_PackageJSON(t *testing.T) {
 	if insp.NodePackageName != "example-package" {
 		t.Errorf("NodePackageName = %q, want %q", insp.NodePackageName, "example-package")
 	}
+	if insp.NodeEngineNode != "" {
+		t.Errorf("NodeEngineNode = %q, want empty", insp.NodeEngineNode)
+	}
+	if insp.NodeEngineNpm != "" {
+		t.Errorf("NodeEngineNpm = %q, want empty", insp.NodeEngineNpm)
+	}
+	if insp.NodeDeclaredPackageManager != "" {
+		t.Errorf("NodeDeclaredPackageManager = %q, want empty", insp.NodeDeclaredPackageManager)
+	}
+}
+
+func TestInspect_NodeProject_EngineNode(t *testing.T) {
+	dir := t.TempDir()
+	content := `{"name": "example-package", "engines": {"node": ">=20 <23"}}`
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	insp, err := project.Inspect(dir)
+	if err != nil {
+		t.Fatalf("Inspect() error = %v", err)
+	}
+
+	if insp.NodeEngineNode != ">=20 <23" {
+		t.Errorf("NodeEngineNode = %q, want %q", insp.NodeEngineNode, ">=20 <23")
+	}
+	if insp.NodeEngineNpm != "" {
+		t.Errorf("NodeEngineNpm = %q, want empty", insp.NodeEngineNpm)
+	}
+}
+
+func TestInspect_NodeProject_EngineNpm(t *testing.T) {
+	dir := t.TempDir()
+	content := `{"name": "example-package", "engines": {"npm": ">=10"}}`
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	insp, err := project.Inspect(dir)
+	if err != nil {
+		t.Fatalf("Inspect() error = %v", err)
+	}
+
+	if insp.NodeEngineNpm != ">=10" {
+		t.Errorf("NodeEngineNpm = %q, want %q", insp.NodeEngineNpm, ">=10")
+	}
+	if insp.NodeEngineNode != "" {
+		t.Errorf("NodeEngineNode = %q, want empty", insp.NodeEngineNode)
+	}
+}
+
+func TestInspect_NodeProject_EnginesBoth(t *testing.T) {
+	dir := t.TempDir()
+	content := `{
+		"name": "example-package",
+		"engines": {"node": ">=20 <23", "npm": ">=10"}
+	}`
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	insp, err := project.Inspect(dir)
+	if err != nil {
+		t.Fatalf("Inspect() error = %v", err)
+	}
+
+	if insp.NodeEngineNode != ">=20 <23" {
+		t.Errorf("NodeEngineNode = %q, want %q", insp.NodeEngineNode, ">=20 <23")
+	}
+	if insp.NodeEngineNpm != ">=10" {
+		t.Errorf("NodeEngineNpm = %q, want %q", insp.NodeEngineNpm, ">=10")
+	}
+}
+
+func TestInspect_NodeProject_DeclaredPackageManager(t *testing.T) {
+	dir := t.TempDir()
+	content := `{"name": "example-package", "packageManager": "yarn@4.6.0"}`
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	insp, err := project.Inspect(dir)
+	if err != nil {
+		t.Fatalf("Inspect() error = %v", err)
+	}
+
+	if insp.NodeDeclaredPackageManager != "yarn@4.6.0" {
+		t.Errorf("NodeDeclaredPackageManager = %q, want %q", insp.NodeDeclaredPackageManager, "yarn@4.6.0")
+	}
 }
 
 func TestInspect_NodeProject_MalformedPackageJSON(t *testing.T) {

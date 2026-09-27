@@ -143,6 +143,15 @@ func runProjectInspect(args []string, out io.Writer) error {
 	if insp.NodePackageManager != "" {
 		fmt.Fprintf(out, "Node.js package manager: %s\n", insp.NodePackageManager)
 	}
+	if insp.NodeEngineNode != "" {
+		fmt.Fprintf(out, "Node.js version requirement: %s\n", insp.NodeEngineNode)
+	}
+	if insp.NodeEngineNpm != "" {
+		fmt.Fprintf(out, "npm version requirement: %s\n", insp.NodeEngineNpm)
+	}
+	if insp.NodeDeclaredPackageManager != "" {
+		fmt.Fprintf(out, "Declared package manager: %s\n", insp.NodeDeclaredPackageManager)
+	}
 
 	return nil
 }
