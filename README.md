@@ -17,9 +17,12 @@ tools a project needs.
     `pnpm-lock.yaml`, `yarn.lock`, or `package-lock.json`.
 - **Doctor**: given a project's inspection results, checks whether the
   executables required by its detected technologies (`git`, `go`, `node`,
-  and its package manager) are available on your `PATH`. Doctor only checks
-  for executables — it does not check versions, run builds, or execute any
-  of those tools.
+  and its package manager) are available on your `PATH`. For each available
+  executable, Doctor runs only its version command (e.g. `git --version`,
+  `go version`, `node --version`) and reports the raw version output.
+  Doctor does not yet compare installed versions against what the project
+  declares it requires, and it does not run builds, installs, project
+  scripts, or any other project commands.
 
 Everything above is read-only with respect to the project being inspected.
 

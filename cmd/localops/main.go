@@ -181,8 +181,8 @@ func runDoctor(args []string, out io.Writer) error {
 
 	issues := 0
 	for _, check := range report.Checks {
-		if check.Available {
-			fmt.Fprintf(out, "[OK] %s\n", check.Tool)
+		if check.Available && check.Version != "" {
+			fmt.Fprintf(out, "[OK] %s — %s\n", check.Tool, check.Version)
 			continue
 		}
 		issues++

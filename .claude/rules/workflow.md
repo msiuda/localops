@@ -81,6 +81,12 @@ Do not create Git commits unless explicitly requested.
 
 Do not use destructive Git operations such as `reset --hard`, forced checkout, or rewriting history unless explicitly requested.
 
+## Documentation synchronization
+
+When a task changes user-facing commands, behavior, setup, or currently supported capabilities, review the relevant README/project documentation and update it in the same change when it has become stale.
+
+Do not update documentation speculatively for features that are not implemented.
+
 ## Local machine safety
 
 Do not execute commands that create, modify, or delete files outside the repository unless explicitly required by the task or approved by the user.
