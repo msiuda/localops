@@ -99,6 +99,7 @@ localops/
 │   ├── doctor/
 │   ├── overview/
 │   ├── validation/
+│   ├── environment/
 │   └── storage/
 │
 ├── docs/
@@ -235,6 +236,30 @@ Before executing anything, Validation inspects the project and runs Doctor. Each
 Validation assigns each check one of three explicit states: passed, failed, or blocked. This is intentionally small, not a severity system, rule engine, or generic job framework.
 
 Command execution uses `os/exec` in production, with the working directory set explicitly per command (the process-wide working directory is never changed), behind a small function-based seam so tests never execute real tools.
+
+---
+
+## Environment module
+
+The `environment` package analyzes a project's Environment Contract: which environment variables it declares it expects (via `.env.example`, `.env.sample`, or `.env.template`), and which are currently satisfied by a local env file (`.env.local`, `.env`) or the process environment.
+
+Environment depends only on `project` (for path validation). Nothing else depends on Environment in this milestone; it is not integrated into Validation or Overview:
+
+```text
+environment
+  └── project
+
+CLI
+  └── environment
+```
+
+Environment is read-only, like project inspection and most of Doctor. It never creates, copies, or modifies any env file, and never injects a variable into the process.
+
+Environment must never interpret, store, print, persist, or otherwise expose an environment variable's value. An env file's bytes must be read from disk to identify its declared keys, but a value is never retained past that point; only variable names, source filenames, and presence/absence are represented in its result model, and this is enforced by the model's shape (there is no field capable of holding a value), not only by convention. The process-environment lookup seam's function type returns only a boolean, never the value `os.LookupEnv` would otherwise expose.
+
+A malformed line in a source file becomes a Finding (source file and line number only, never the line's contents), not a fatal error; a scanning failure (e.g. a line exceeding the fixed size limit) is instead an explicit error naming only the source file. Only a genuine failure to read a discovered source file (for example, a permission error) is otherwise a command error.
+
+If none of the supported contract files exist, Environment returns the no-contract result immediately, without reading `.env`/`.env.local` or querying the process environment at all — both for correctness and to avoid unnecessary access to files that may carry secrets.
 
 ---
 

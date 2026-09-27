@@ -69,6 +69,22 @@ respect to the project being examined.
     the recognized ones above.
   - A project can be both a Go module and a Node.js project; Validate runs
     checks for both.
+- **Environment** (`localops environment <path>`) analyzes a project's
+  Environment Contract: which environment variables it declares it
+  expects, and which are currently satisfied locally. It is read-only.
+  - **Contract sources** (declare expected variable names): `.env.example`,
+    `.env.sample`, `.env.template`. If more than one exists, their declared
+    variables are combined into a union.
+  - **Local sources** (checked for whether a declared variable is
+    present): `.env.local`, then `.env`, then the current process
+    environment — in that precedence order.
+  - Environment **never interprets, stores, prints, or otherwise exposes
+    an environment variable's value** — only variable names, which source
+    file(s) declare or satisfy them, and presence/absence are ever shown.
+    (An env file's bytes are read from disk to identify its declared
+    keys, but a value is never retained past that.)
+  - It does not yet scan source code for environment variable usage (e.g.
+    `process.env` references); it only reads the declared contract files.
 
 ## Commands
 
@@ -80,11 +96,12 @@ localops project inspect <path>
 localops doctor <path>
 localops overview
 localops validate <path>
+localops environment <path>
 ```
 
 Run `localops help`, `localops project help`, `localops doctor --help`,
-`localops overview --help`, or `localops validate --help` for details on
-any command.
+`localops overview --help`, `localops validate --help`, or
+`localops environment --help` for details on any command.
 
 ## Running from the repository
 
@@ -93,6 +110,7 @@ go run ./cmd/localops project inspect .
 go run ./cmd/localops doctor .
 go run ./cmd/localops overview
 go run ./cmd/localops validate .
+go run ./cmd/localops environment .
 ```
 
 ## Building
@@ -123,6 +141,7 @@ go run ./cmd/localops overview
 go run ./cmd/localops project inspect .
 go run ./cmd/localops doctor .
 go run ./cmd/localops validate .
+go run ./cmd/localops environment .
 ```
 
 After installing:
@@ -133,8 +152,10 @@ localops overview
 localops project inspect .
 localops doctor .
 localops validate .
+localops environment .
 ```
 
 `localops validate` actively runs the project's own validation commands
 (e.g. `go test`, or `pnpm run lint`) — unlike the other commands above, it
-is not read-only.
+is not read-only. `localops environment` is read-only, and never prints or
+stores any environment variable's value.

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/msiuda/localops/internal/doctor"
+	"github.com/msiuda/localops/internal/environment"
 	"github.com/msiuda/localops/internal/project"
 	"github.com/msiuda/localops/internal/storage"
 	"github.com/msiuda/localops/internal/validation"
@@ -301,6 +302,148 @@ func TestRenderValidation(t *testing.T) {
 	}
 }
 
+func TestRun_Environment_NoContract(t *testing.T) {
+	projectDir := t.TempDir()
+
+	var out bytes.Buffer
+	if err := run([]string{"environment", projectDir}, failingStoreFunc(), &out); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+
+	got := out.String()
+	if !strings.Contains(got, "No environment contract detected.") {
+		t.Errorf("output = %q, want the no-contract message", got)
+	}
+	if !strings.Contains(got, ".env.example") || !strings.Contains(got, ".env.sample") || !strings.Contains(got, ".env.template") {
+		t.Errorf("output = %q, want it to list the supported contract files", got)
+	}
+}
+
+func TestRun_Environment_ContractAndLocalFiles(t *testing.T) {
+	projectDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(projectDir, ".env.example"), []byte("DATABASE_URL=x\nJWT_SECRET=x\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectDir, ".env"), []byte("DATABASE_URL=postgres://real\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	var out bytes.Buffer
+	if err := run([]string{"environment", projectDir}, failingStoreFunc(), &out); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+
+	got := out.String()
+	for _, want := range []string{
+		"LocalOps Environment",
+		"Contract sources",
+		".env.example — 2 variables",
+		"Local sources",
+		".env — 1 variable",
+		"[OK] DATABASE_URL — .env",
+		"[MISSING] JWT_SECRET",
+		"1 satisfied, 1 missing",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output = %q, want it to contain %q", got, want)
+		}
+	}
+}
+
+func TestRun_Environment_InvalidPath(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing")
+
+	var out bytes.Buffer
+	if err := run([]string{"environment", missing}, failingStoreFunc(), &out); err == nil {
+		t.Fatal("run() error = nil, want an error for a missing project path")
+	}
+}
+
+func TestRun_Environment_SecretValuesNeverAppearInOutput(t *testing.T) {
+	const secret = "SUPER_SECRET_VALUE_SHOULD_NEVER_APPEAR"
+	projectDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(projectDir, ".env.example"), []byte("API_KEY=x\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectDir, ".env"), []byte("API_KEY="+secret+"\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	var out bytes.Buffer
+	if err := run([]string{"environment", projectDir}, failingStoreFunc(), &out); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+
+	got := out.String()
+	if strings.Contains(got, secret) {
+		t.Fatalf("output contains the secret value:\n%s", got)
+	}
+	if !strings.Contains(got, "[OK] API_KEY — .env") {
+		t.Errorf("output = %q, want API_KEY marked satisfied via .env", got)
+	}
+}
+
+func TestRenderEnvironment_ProcessEnvironmentSection(t *testing.T) {
+	t.Run("hidden when unused", func(t *testing.T) {
+		result := environment.Result{
+			Path:            "/projects/demo",
+			ContractSources: []environment.ContractSource{{File: ".env.example", VariableCount: 1}},
+			LocalSources:    []environment.LocalSource{{File: ".env", VariableCount: 1}},
+			Variables: []environment.VariableStatus{
+				{Name: "DATABASE_URL", DeclaredIn: []string{".env.example"}, Satisfied: true, Source: ".env"},
+			},
+		}
+
+		var out bytes.Buffer
+		renderEnvironment(&out, result)
+
+		if strings.Contains(out.String(), "process environment") {
+			t.Errorf("output = %q, want no process environment line when it satisfied nothing", out.String())
+		}
+	})
+
+	t.Run("shown when it satisfies a variable", func(t *testing.T) {
+		result := environment.Result{
+			Path:            "/projects/demo",
+			ContractSources: []environment.ContractSource{{File: ".env.example", VariableCount: 1}},
+			Variables: []environment.VariableStatus{
+				{Name: "HOME", DeclaredIn: []string{".env.example"}, Satisfied: true, Source: "process environment"},
+			},
+		}
+
+		var out bytes.Buffer
+		renderEnvironment(&out, result)
+
+		if !strings.Contains(out.String(), "process environment") {
+			t.Errorf("output = %q, want a process environment line", out.String())
+		}
+	})
+}
+
+func TestRenderEnvironment_Findings(t *testing.T) {
+	result := environment.Result{
+		Path:            "/projects/demo",
+		ContractSources: []environment.ContractSource{{File: ".env.example", VariableCount: 1}},
+		Variables: []environment.VariableStatus{
+			{Name: "DATABASE_URL", DeclaredIn: []string{".env.example"}},
+		},
+		Findings: []environment.Finding{
+			{Source: ".env.example", Line: 8, Detail: "could not be parsed"},
+		},
+	}
+
+	var out bytes.Buffer
+	renderEnvironment(&out, result)
+
+	got := out.String()
+	if !strings.Contains(got, "Findings") {
+		t.Errorf("output = %q, want a Findings section", got)
+	}
+	if !strings.Contains(got, "- .env.example: line 8 could not be parsed") {
+		t.Errorf("output = %q, want the finding line", got)
+	}
+}
+
 func TestRun_Help(t *testing.T) {
 	tests := []struct {
 		name string
@@ -317,6 +460,8 @@ func TestRun_Help(t *testing.T) {
 		{name: "overview help", args: []string{"overview", "help"}, want: overviewHelp},
 		{name: "validate --help", args: []string{"validate", "--help"}, want: validateHelp},
 		{name: "validate help", args: []string{"validate", "help"}, want: validateHelp},
+		{name: "environment --help", args: []string{"environment", "--help"}, want: environmentHelp},
+		{name: "environment help", args: []string{"environment", "help"}, want: environmentHelp},
 	}
 
 	for _, tt := range tests {
@@ -354,6 +499,8 @@ func TestRun_InvalidArguments(t *testing.T) {
 		{name: "overview with unexpected argument", args: []string{"overview", "extra"}},
 		{name: "validate without path", args: []string{"validate"}},
 		{name: "validate with too many arguments", args: []string{"validate", "a", "b"}},
+		{name: "environment without path", args: []string{"environment"}},
+		{name: "environment with too many arguments", args: []string{"environment", "a", "b"}},
 	}
 
 	for _, tt := range tests {

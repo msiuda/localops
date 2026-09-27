@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/msiuda/localops/internal/doctor"
+	"github.com/msiuda/localops/internal/environment"
 	"github.com/msiuda/localops/internal/overview"
 	"github.com/msiuda/localops/internal/project"
 	"github.com/msiuda/localops/internal/storage"
@@ -45,6 +46,8 @@ func run(args []string, getStore storeFunc, out io.Writer) error {
 		return runOverview(args[1:], getStore, out)
 	case "validate":
 		return runValidate(args[1:], out)
+	case "environment":
+		return runEnvironment(args[1:], out)
 	default:
 		return usageError()
 	}
@@ -420,6 +423,97 @@ func renderValidation(out io.Writer, result validation.Result) {
 	fmt.Fprintf(out, "%d passed, %d failed, %d blocked\n", passed, failed, blocked)
 }
 
+func runEnvironment(args []string, out io.Writer) error {
+	if len(args) == 1 && isHelpFlag(args[0]) {
+		fmt.Fprint(out, environmentHelp)
+		return nil
+	}
+	if len(args) != 1 {
+		return fmt.Errorf("usage: localops environment <path>")
+	}
+
+	result, err := environment.Analyze(args[0])
+	if err != nil {
+		return fmt.Errorf("environment: %w", err)
+	}
+
+	renderEnvironment(out, result)
+	return nil
+}
+
+// renderEnvironment prints result in the format described by
+// "localops environment --help". It is a pure presentation step, kept
+// separate from running the analysis itself. It never prints an
+// environment variable's value, since Result never contains one.
+func renderEnvironment(out io.Writer, result environment.Result) {
+	fmt.Fprintln(out, "LocalOps Environment")
+	fmt.Fprintf(out, "Project: %s\n\n", result.Path)
+
+	if len(result.ContractSources) == 0 {
+		fmt.Fprintln(out, "No environment contract detected.")
+		fmt.Fprintln(out)
+		fmt.Fprintln(out, "Supported contract files:")
+		fmt.Fprintln(out, "  .env.example")
+		fmt.Fprintln(out, "  .env.sample")
+		fmt.Fprintln(out, "  .env.template")
+		return
+	}
+
+	fmt.Fprintln(out, "Contract sources")
+	for _, s := range result.ContractSources {
+		fmt.Fprintf(out, "  %s — %d %s\n", s.File, s.VariableCount, pluralizeVariables(s.VariableCount))
+	}
+	fmt.Fprintln(out)
+
+	processEnvUsed := false
+	for _, v := range result.Variables {
+		if v.Source == "process environment" {
+			processEnvUsed = true
+			break
+		}
+	}
+
+	fmt.Fprintln(out, "Local sources")
+	for _, s := range result.LocalSources {
+		fmt.Fprintf(out, "  %s — %d %s\n", s.File, s.VariableCount, pluralizeVariables(s.VariableCount))
+	}
+	if processEnvUsed {
+		fmt.Fprintln(out, "  process environment")
+	}
+	fmt.Fprintln(out)
+
+	fmt.Fprintln(out, "Variables")
+	var satisfied, missing int
+	for _, v := range result.Variables {
+		if v.Satisfied {
+			satisfied++
+			fmt.Fprintf(out, "[OK] %s — %s\n", v.Name, v.Source)
+			continue
+		}
+		missing++
+		fmt.Fprintf(out, "[MISSING] %s\n", v.Name)
+	}
+
+	fmt.Fprintln(out)
+	fmt.Fprintf(out, "%d satisfied, %d missing\n", satisfied, missing)
+
+	if len(result.Findings) > 0 {
+		fmt.Fprintln(out)
+		fmt.Fprintln(out, "Findings")
+		for _, f := range result.Findings {
+			fmt.Fprintf(out, "- %s: line %d %s\n", f.Source, f.Line, f.Detail)
+		}
+	}
+}
+
+// pluralizeVariables returns "variable" or "variables" depending on n.
+func pluralizeVariables(n int) string {
+	if n == 1 {
+		return "variable"
+	}
+	return "variables"
+}
+
 func defaultStore() (*storage.Store, error) {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
@@ -434,13 +528,15 @@ const topLevelHelp = `Usage:
   localops <command>
 
 Commands:
-  project    Manage and inspect local projects
-  doctor     Diagnose a local project
-  overview   Show a health summary of all registered projects
-  validate   Actively run a project's validation checks
+  project       Manage and inspect local projects
+  doctor        Diagnose a local project
+  overview      Show a health summary of all registered projects
+  validate      Actively run a project's validation checks
+  environment   Analyze a project's Environment Contract
 
 Run 'localops project help', 'localops doctor --help',
-'localops overview --help', or 'localops validate --help' for details.
+'localops overview --help', 'localops validate --help', or
+'localops environment --help' for details.
 `
 
 const projectHelp = `Usage:
@@ -483,6 +579,20 @@ missing Node.js dependencies, blocks only the checks that depend on it;
 independent checks still run.
 `
 
+const environmentHelp = `Usage:
+  localops environment <path>
+
+Analyzes the project's Environment Contract: which environment variables
+it declares it expects (via .env.example, .env.sample, or .env.template),
+and which are currently satisfied by a local env file (.env.local, .env)
+or the process environment.
+
+This is read-only. It never creates, copies, or modifies any env file,
+never injects variables into the process, and never prints, stores, or
+otherwise exposes a variable's value — only variable names, source
+filenames, and whether each is present are shown.
+`
+
 // isHelpFlag reports whether arg requests help rather than naming a
 // subcommand or path.
 func isHelpFlag(arg string) bool {
@@ -490,5 +600,5 @@ func isHelpFlag(arg string) bool {
 }
 
 func usageError() error {
-	return fmt.Errorf("usage: localops <project|doctor|overview|validate> ...")
+	return fmt.Errorf("usage: localops <project|doctor|overview|validate|environment> ...")
 }

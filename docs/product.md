@@ -117,6 +117,34 @@ Validation never installs dependencies, modifies package manifests, runs
 package-manager install/update commands, deploys anything, or runs any
 command beyond the specific ones listed above.
 
+## Environment Contract
+
+Environment Contract answers: what environment variables does this
+project declare that it expects, and which of those are available in the
+current local environment?
+
+It is read-only, like project inspection and Doctor.
+
+Supported contract files, which declare the expected variable names, are
+`.env.example`, `.env.sample`, and `.env.template`. If more than one
+exists, their declared variables are combined into a union.
+
+Supported local sources, checked for whether a declared variable is
+present, are `.env.local`, `.env`, and the current process environment,
+in that precedence order.
+
+Environment Contract never interprets, stores, prints, or otherwise
+exposes an environment variable's value. An env file's bytes must be read
+from disk to identify its declared keys, but a value is never retained
+past that; only variable names, the source file(s) that declare or
+satisfy them, and presence/absence are ever represented.
+
+This milestone does not scan project source code for environment variable
+usage (for example, `process.env` references); it only reads the declared
+contract files. It is intended to eventually support comparing the local
+environment against CI or deployment environments, but that comparison is
+not implemented yet.
+
 ## Future direction
 
 LocalOps may later support:
