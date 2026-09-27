@@ -91,8 +91,11 @@ A likely shape is:
 ```text
 localops/
 ├── cmd/
-│   └── localops/
-│       └── main.go
+│   ├── localops/
+│   │   └── main.go
+│   └── desktop/
+│       ├── main.go
+│       └── frontend/
 │
 ├── internal/
 │   ├── project/
@@ -100,6 +103,7 @@ localops/
 │   ├── overview/
 │   ├── validation/
 │   ├── environment/
+│   ├── desktop/
 │   └── storage/
 │
 ├── docs/
@@ -260,6 +264,38 @@ Environment must never interpret, store, print, persist, or otherwise expose an 
 A malformed line in a source file becomes a Finding (source file and line number only, never the line's contents), not a fatal error; a scanning failure (e.g. a line exceeding the fixed size limit) is instead an explicit error naming only the source file. Only a genuine failure to read a discovered source file (for example, a permission error) is otherwise a command error.
 
 If none of the supported contract files exist, Environment returns the no-contract result immediately, without reading `.env`/`.env.local` or querying the process environment at all — both for correctness and to avoid unnecessary access to files that may carry secrets.
+
+---
+
+## Desktop application boundary
+
+LocalOps has two entry points into the same core: the CLI (`cmd/localops`) and a desktop application (`cmd/desktop`, Wails v3 + React/TypeScript/Vite). Both live in the same Go module so the desktop backend can import `internal/...` packages directly, and both resolve the same registered-project storage file via `storage.DefaultPath()` — there is exactly one project registry, never a second one for the desktop app.
+
+`internal/desktop` is a thin adapter, not a second implementation. The
+dependency direction runs from each entry point inward to shared core
+packages — the CLI does not depend on the desktop app, or vice versa:
+
+```text
+cmd/localops
+  └── core packages
+
+cmd/desktop
+  └── internal/desktop
+       ├── storage
+       └── overview
+            ├── project
+            └── doctor
+
+React frontend
+  └── Wails generated binding
+       └── internal/desktop
+```
+
+Its `Service.GetOverview` loads registered projects from `storage`, calls the existing `overview.Build`, and converts each `overview.ProjectResult` into a small UI-facing DTO (`ProjectCard`): name, path, health, detected technologies, package manager, issue count, and concise failed-check findings — never raw `project.Inspection`/`doctor.Report` structures, and never secret or environment-variable values. `Service` is bound to the frontend through Wails v3's generated TypeScript bindings; there is no HTTP server, REST API, or manual JSON-RPC layer.
+
+The frontend is presentation only: it renders `ProjectCard` data and tracks loading/empty/error UI state, but never recomputes project health itself. `internal/desktop` does not duplicate storage, project inspection, Doctor, Overview, Validation, or Environment logic; it composes them.
+
+The desktop window is frameless on macOS (Wails v3's `Frameless` option), with default rounded AppKit corners preserved and no transparent/private-API visual effects. Custom window controls and drag regions are implemented entirely in the frontend (a `--wails-draggable` CSS hook), not via a restored native title bar.
 
 ---
 

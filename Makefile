@@ -1,0 +1,149 @@
+# LocalOps developer Makefile.
+#
+# This is a convenience wrapper, not a build system: Wails Taskfiles under
+# cmd/desktop remain the canonical implementation of Wails-specific
+# dev/build/package operations, and this Makefile only delegates to them.
+# LocalOps does not require Make to build.
+
+# ==============================================================================
+# Colors
+# ==============================================================================
+BLUE       := \033[0;34m
+BOLD_WHITE := \033[1;37m
+NC         := \033[0m
+
+# ==============================================================================
+# Variables
+# ==============================================================================
+WAILS_VERSION := v3.0.0-beta.26
+DESKTOP_DIR   := cmd/desktop
+FRONTEND_DIR  := $(DESKTOP_DIR)/frontend
+ARGS          ?=
+
+.PHONY: default
+default: help
+
+##@ Help
+
+.PHONY: help
+help: ## Show list of targets with descriptions
+	@awk 'BEGIN {FS = ":.*##"; printf "\n$(BOLD_WHITE)Usage:$(NC)\n\n  make $(BLUE)<target>$(NC)\n\n"} /^[a-zA-Z0-9_-]+:.*?##/ { printf "  $(BLUE)%-24s$(NC) %s\n", $$1, $$2 } /^##@/ { printf "\n$(BOLD_WHITE)%s$(NC)\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+
+##@ General
+
+.PHONY: bootstrap
+bootstrap: install-wails frontend-install bindings ## First-time setup: install pinned Wails CLI, frontend deps, and generate bindings
+
+.PHONY: dev
+dev: desktop-dev ## Run the desktop app in Wails dev mode (day-to-day UI development)
+
+.PHONY: build
+build: desktop-build ## Build the production desktop application
+
+.PHONY: run
+run: ## Run the desktop application via the existing Wails task
+	@printf "$(BLUE)Running desktop app (wails3 task run)...$(NC)\n"
+	cd $(DESKTOP_DIR) && wails3 task run
+
+##@ CLI
+
+.PHONY: cli-build
+cli-build: ## Build the LocalOps CLI to bin/localops
+	@printf "$(BLUE)Building cmd/localops...$(NC)\n"
+	go build -o bin/localops ./cmd/localops
+
+.PHONY: cli-run
+cli-run: ## Run the CLI via `go run`, e.g. make cli-run ARGS="overview"
+	go run ./cmd/localops $(ARGS)
+
+##@ Desktop
+
+.PHONY: desktop-dev
+desktop-dev: ## Run the desktop app in Wails dev mode
+	@printf "$(BLUE)Starting Wails dev mode...$(NC)\n"
+	cd $(DESKTOP_DIR) && wails3 task dev
+
+.PHONY: desktop-build
+desktop-build: ## Build the production desktop application via Wails
+	@printf "$(BLUE)Building desktop app (wails3 build)...$(NC)\n"
+	cd $(DESKTOP_DIR) && wails3 build
+
+.PHONY: desktop-package
+desktop-package: ## Package the desktop app via the Wails package task
+	@printf "$(BLUE)Packaging desktop app (wails3 task package)...$(NC)\n"
+	cd $(DESKTOP_DIR) && wails3 task package
+
+.PHONY: bindings
+bindings: ## Regenerate Wails TypeScript bindings
+	@printf "$(BLUE)Generating Wails bindings...$(NC)\n"
+	cd $(DESKTOP_DIR) && wails3 task common:generate:bindings
+
+##@ Frontend
+
+.PHONY: frontend-install
+frontend-install: ## Install frontend dependencies (npm ci)
+	@printf "$(BLUE)Installing frontend dependencies...$(NC)\n"
+	cd $(FRONTEND_DIR) && npm ci
+
+.PHONY: frontend-typecheck
+frontend-typecheck: ## Run the frontend typecheck script
+	cd $(FRONTEND_DIR) && npm run typecheck
+
+.PHONY: frontend-build
+frontend-build: ## Run the frontend production build
+	cd $(FRONTEND_DIR) && npm run build
+
+##@ Quality
+
+.PHONY: fmt
+fmt: ## Format Go source files (may modify files)
+	gofmt -l -w .
+
+.PHONY: test
+test: ## Run Go tests
+	go test ./...
+
+.PHONY: vet
+vet: ## Run go vet
+	go vet ./...
+
+.PHONY: typecheck
+typecheck: frontend-typecheck ## Run frontend typecheck (alias)
+
+.PHONY: check
+check: ## Run all non-mutating pre-commit verification (gofmt check, test, vet, frontend typecheck+build)
+	@printf "$(BLUE)Checking gofmt cleanliness...$(NC)\n"
+	@unformatted="$$(gofmt -l .)"; \
+	if [ -n "$$unformatted" ]; then \
+		echo "The following files are not gofmt-formatted:"; \
+		echo "$$unformatted"; \
+		exit 1; \
+	fi
+	$(MAKE) test
+	$(MAKE) vet
+	$(MAKE) frontend-typecheck
+	$(MAKE) frontend-build
+
+.PHONY: verify
+verify: check ## Alias for check
+
+##@ Cleanup
+
+.PHONY: clean
+clean: ## Remove generated build outputs (desktop bin/dist/bindings, root bin)
+	@printf "$(BLUE)Removing generated build outputs...$(NC)\n"
+	rm -rf bin
+	rm -rf $(DESKTOP_DIR)/bin
+	rm -rf $(FRONTEND_DIR)/dist
+	rm -rf $(FRONTEND_DIR)/bindings
+
+.PHONY: clean-all
+clean-all: clean ## Also remove frontend node_modules
+	@printf "$(BLUE)Removing frontend node_modules...$(NC)\n"
+	rm -rf $(FRONTEND_DIR)/node_modules
+
+##@ Tools
+
+.PHONY: install-wails
+install-wails: ## Install the pinned Wails v3 CLI
+	go install github.com/wailsapp/wails/v3/cmd/wails3@$(WAILS_VERSION)

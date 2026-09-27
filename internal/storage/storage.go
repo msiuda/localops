@@ -20,6 +20,19 @@ func New(path string) *Store {
 	return &Store{path: path}
 }
 
+// DefaultPath returns the default LocalOps storage file location, in an
+// appropriate user-specific application configuration directory. Every
+// LocalOps entry point (the CLI and the desktop application) uses this same
+// path, so they share one registered-project registry.
+func DefaultPath() (string, error) {
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("locate user config directory: %w", err)
+	}
+
+	return filepath.Join(configDir, "localops", "projects.json"), nil
+}
+
 // fileState is the on-disk representation of the storage file.
 type fileState struct {
 	Projects []project.Project `json:"projects"`

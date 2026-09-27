@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -515,12 +514,11 @@ func pluralizeVariables(n int) string {
 }
 
 func defaultStore() (*storage.Store, error) {
-	configDir, err := os.UserConfigDir()
+	path, err := storage.DefaultPath()
 	if err != nil {
-		return nil, fmt.Errorf("locate user config directory: %w", err)
+		return nil, err
 	}
 
-	path := filepath.Join(configDir, "localops", "projects.json")
 	return storage.New(path), nil
 }
 

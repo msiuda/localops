@@ -1,8 +1,10 @@
 # LocalOps
 
-LocalOps is a local developer CLI tool for managing and inspecting local
+LocalOps is a local developer tool for managing and inspecting local
 software projects, with basic diagnostics for whether your machine has the
-tools a project needs.
+tools a project needs. It ships as a CLI (`cmd/localops`) and, as of this
+milestone, a native desktop application (`cmd/desktop`) — both operate on
+the same registered-project data.
 
 ## What it does today
 
@@ -159,3 +161,74 @@ localops environment .
 (e.g. `go test`, or `pnpm run lint`) — unlike the other commands above, it
 is not read-only. `localops environment` is read-only, and never prints or
 stores any environment variable's value.
+
+## Desktop application
+
+LocalOps also ships as a native desktop app, built with
+[Wails v3](https://v3.wails.io/) (Go backend, React + TypeScript + Vite
+frontend). The CLI remains fully supported and unaffected. There is one
+shared registered-project registry (`internal/storage.DefaultPath()`); the
+CLI currently manages registration (`project add`/`project list`), and the
+desktop app reads that same registry — a project added via the CLI shows
+up in the desktop app. The desktop app does not yet register or remove
+projects itself.
+
+### Current capability
+
+The desktop app currently implements a single screen: **Projects**, a
+dashboard of every registered project's health, backed by the real
+storage → project inspection → Doctor → Overview chain (the same one the
+CLI's `localops overview` uses). It shows each project's name, path,
+health (healthy / issues / unavailable), detected technologies, package
+manager, and a concise preview of failed Doctor checks, with loading,
+empty, and error states, and a manual refresh.
+
+Doctor, Validation, Environment, and Settings exist in the sidebar as
+navigation placeholders only — they establish the app's information
+architecture but are not implemented yet. Project add/remove, a project
+detail view, and an in-app theme switch are not implemented in this
+milestone either.
+
+### Architecture
+
+```text
+cmd/desktop/            Wails v3 entry point (frameless window, service binding)
+  frontend/             React + TypeScript + Vite UI
+internal/desktop/       Thin Wails-facing service: adapts internal/storage
+                         and internal/overview for the frontend as small
+                         UI-facing DTOs. It does not duplicate storage,
+                         inspection, Doctor, Overview, Validation, or
+                         Environment logic.
+```
+
+The frontend never recomputes project health; it only renders what
+`internal/desktop.Service.GetOverview` (exposed to the frontend through
+Wails's generated TypeScript bindings — no HTTP/REST/JSON-RPC layer) already
+computed in Go.
+
+### Developing the desktop app
+
+The recommended entry point is the root `Makefile` (run `make help` for the
+full list of targets; it's a convenience wrapper around the commands below,
+not a requirement for building LocalOps). On a machine that already has Go,
+Node/npm, and Make, `make bootstrap` is sufficient for first-time setup —
+it also installs the pinned Wails CLI, so a prior manual `go install
+.../wails3` is not required:
+
+```bash
+make bootstrap   # one-time: install pinned Wails CLI, frontend deps, generate bindings
+make dev         # live-reloading development mode
+make check       # gofmt/test/vet + frontend typecheck/build
+make build       # production build
+```
+
+The underlying raw commands (what `make` delegates to) still work directly:
+
+```bash
+# One-time: install the Wails v3 CLI
+go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.26
+
+cd cmd/desktop
+wails3 task dev     # live-reloading development mode
+wails3 build        # production build (binary at cmd/desktop/bin/localops)
+```

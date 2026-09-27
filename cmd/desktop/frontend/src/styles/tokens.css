@@ -1,0 +1,79 @@
+/*
+ * Core design tokens for LocalOps desktop.
+ *
+ * Dark is the baseline palette (declared on :root). The light palette
+ * overrides those same variables under prefers-color-scheme: light, so the
+ * app follows the system appearance without any in-app theme switch.
+ */
+
+:root {
+  color-scheme: dark;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
+    Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: "SF Mono", ui-monospace, Menlo, Consolas, "Liberation Mono",
+    monospace;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  /* Surfaces */
+  --bg: #1b1c1f;
+  --sidebar-bg: #17181a;
+  --surface: #232427;
+  --surface-hover: #2a2b2f;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.14);
+
+  /* Text */
+  --text-primary: #edeef0;
+  --text-secondary: #a3a6ac;
+  --text-muted: #6d7076;
+
+  /* Status */
+  --success: #3ecf8e;
+  --success-bg: rgba(62, 207, 142, 0.14);
+  --danger: #f0655f;
+  --danger-bg: rgba(240, 101, 95, 0.14);
+  --warning: #f5a623;
+  --warning-bg: rgba(245, 166, 35, 0.14);
+
+  /* Accent */
+  --accent: #5b8def;
+  --accent-bg: rgba(91, 141, 239, 0.16);
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+
+    --bg: #f4f5f7;
+    --sidebar-bg: #eceef1;
+    --surface: #ffffff;
+    --surface-hover: #f0f1f4;
+    --border: rgba(15, 17, 21, 0.08);
+    --border-strong: rgba(15, 17, 21, 0.14);
+
+    --text-primary: #1c1d1f;
+    --text-secondary: #55585e;
+    --text-muted: #8b8e94;
+
+    --success: #1f9d63;
+    --success-bg: rgba(31, 157, 99, 0.1);
+    --danger: #d1433c;
+    --danger-bg: rgba(209, 67, 60, 0.1);
+    --warning: #b8720a;
+    --warning-bg: rgba(184, 114, 10, 0.1);
+
+    --accent: #3b6fe0;
+    --accent-bg: rgba(59, 111, 224, 0.12);
+  }
+}
