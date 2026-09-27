@@ -12,52 +12,58 @@ import (
 )
 
 func main() {
-	store, err := defaultStore()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-
-	if err := run(os.Args[1:], store, os.Stdout); err != nil {
+	if err := run(os.Args[1:], defaultStore, os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func run(args []string, store *storage.Store, out io.Writer) error {
+// storeFunc resolves the project store, only when a command actually needs
+// persistence. It lets commands that don't touch storage, such as
+// "project inspect", avoid resolving it altogether.
+type storeFunc func() (*storage.Store, error)
+
+func run(args []string, getStore storeFunc, out io.Writer) error {
 	if len(args) < 1 {
 		return usageError()
 	}
 
 	switch args[0] {
 	case "project":
-		return runProject(args[1:], store, out)
+		return runProject(args[1:], getStore, out)
 	default:
 		return usageError()
 	}
 }
 
-func runProject(args []string, store *storage.Store, out io.Writer) error {
+func runProject(args []string, getStore storeFunc, out io.Writer) error {
 	if len(args) < 1 {
 		return usageError()
 	}
 
 	switch args[0] {
 	case "add":
-		return runProjectAdd(args[1:], store, out)
+		return runProjectAdd(args[1:], getStore, out)
 	case "list":
-		return runProjectList(args[1:], store, out)
+		return runProjectList(args[1:], getStore, out)
+	case "inspect":
+		return runProjectInspect(args[1:], out)
 	default:
 		return usageError()
 	}
 }
 
-func runProjectAdd(args []string, store *storage.Store, out io.Writer) error {
+func runProjectAdd(args []string, getStore storeFunc, out io.Writer) error {
 	if len(args) != 1 {
 		return fmt.Errorf("usage: localops project add <path>")
 	}
 
 	proj, err := project.FromPath(args[0])
+	if err != nil {
+		return fmt.Errorf("add project: %w", err)
+	}
+
+	store, err := getStore()
 	if err != nil {
 		return fmt.Errorf("add project: %w", err)
 	}
@@ -77,9 +83,14 @@ func runProjectAdd(args []string, store *storage.Store, out io.Writer) error {
 	return nil
 }
 
-func runProjectList(args []string, store *storage.Store, out io.Writer) error {
+func runProjectList(args []string, getStore storeFunc, out io.Writer) error {
 	if len(args) != 0 {
 		return fmt.Errorf("usage: localops project list")
+	}
+
+	store, err := getStore()
+	if err != nil {
+		return fmt.Errorf("list projects: %w", err)
 	}
 
 	projects, err := store.Load()
@@ -99,6 +110,27 @@ func runProjectList(args []string, store *storage.Store, out io.Writer) error {
 	return nil
 }
 
+func runProjectInspect(args []string, out io.Writer) error {
+	if len(args) != 1 {
+		return fmt.Errorf("usage: localops project inspect <path>")
+	}
+
+	insp, err := project.Inspect(args[0])
+	if err != nil {
+		return fmt.Errorf("inspect project: %w", err)
+	}
+
+	fmt.Fprintf(out, "Name: %s\n", insp.Name)
+	fmt.Fprintf(out, "Path: %s\n", insp.Path)
+	fmt.Fprintf(out, "Git repository: %t\n", insp.IsGitRepository)
+	fmt.Fprintf(out, "Go module: %t\n", insp.HasGoMod)
+	if insp.HasGoMod {
+		fmt.Fprintf(out, "Go module path: %s\n", insp.GoModulePath)
+	}
+
+	return nil
+}
+
 func defaultStore() (*storage.Store, error) {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
@@ -110,5 +142,5 @@ func defaultStore() (*storage.Store, error) {
 }
 
 func usageError() error {
-	return fmt.Errorf("usage: localops project <add|list> ...")
+	return fmt.Errorf("usage: localops project <add|list|inspect> ...")
 }

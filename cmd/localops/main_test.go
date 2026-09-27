@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -15,12 +17,24 @@ func newTestStore(t *testing.T) *storage.Store {
 	return storage.New(path)
 }
 
+func testStoreFunc(store *storage.Store) storeFunc {
+	return func() (*storage.Store, error) {
+		return store, nil
+	}
+}
+
+func failingStoreFunc() storeFunc {
+	return func() (*storage.Store, error) {
+		return nil, errors.New("store unavailable")
+	}
+}
+
 func TestRun_ProjectAdd(t *testing.T) {
 	store := newTestStore(t)
 	projectDir := t.TempDir()
 	var out bytes.Buffer
 
-	if err := run([]string{"project", "add", projectDir}, store, &out); err != nil {
+	if err := run([]string{"project", "add", projectDir}, testStoreFunc(store), &out); err != nil {
 		t.Fatalf("run() error = %v", err)
 	}
 
@@ -44,12 +58,12 @@ func TestRun_ProjectList(t *testing.T) {
 	store := newTestStore(t)
 	projectDir := t.TempDir()
 	var addOut bytes.Buffer
-	if err := run([]string{"project", "add", projectDir}, store, &addOut); err != nil {
+	if err := run([]string{"project", "add", projectDir}, testStoreFunc(store), &addOut); err != nil {
 		t.Fatalf("run() add error = %v", err)
 	}
 
 	var listOut bytes.Buffer
-	if err := run([]string{"project", "list"}, store, &listOut); err != nil {
+	if err := run([]string{"project", "list"}, testStoreFunc(store), &listOut); err != nil {
 		t.Fatalf("run() list error = %v", err)
 	}
 
@@ -62,12 +76,37 @@ func TestRun_ProjectList_Empty(t *testing.T) {
 	store := newTestStore(t)
 	var out bytes.Buffer
 
-	if err := run([]string{"project", "list"}, store, &out); err != nil {
+	if err := run([]string{"project", "list"}, testStoreFunc(store), &out); err != nil {
 		t.Fatalf("run() error = %v", err)
 	}
 
 	if !strings.Contains(out.String(), "No projects registered.") {
 		t.Errorf("output = %q, want the empty-list message", out.String())
+	}
+}
+
+func TestRun_ProjectInspect(t *testing.T) {
+	projectDir := t.TempDir()
+	goModPath := filepath.Join(projectDir, "go.mod")
+	if err := os.WriteFile(goModPath, []byte("module github.com/example/foo\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	var out bytes.Buffer
+	if err := run([]string{"project", "inspect", projectDir}, failingStoreFunc(), &out); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+
+	got := out.String()
+	for _, want := range []string{
+		filepath.Base(projectDir),
+		"Git repository: false",
+		"Go module: true",
+		"github.com/example/foo",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output = %q, want it to contain %q", got, want)
+		}
 	}
 }
 
@@ -83,14 +122,16 @@ func TestRun_InvalidArguments(t *testing.T) {
 		{name: "add without path", args: []string{"project", "add"}},
 		{name: "add with too many arguments", args: []string{"project", "add", "a", "b"}},
 		{name: "list with unexpected argument", args: []string{"project", "list", "extra"}},
+		{name: "inspect without path", args: []string{"project", "inspect"}},
+		{name: "inspect with too many arguments", args: []string{"project", "inspect", "a", "b"}},
+		{name: "inspect missing path", args: []string{"project", "inspect", filepath.Join(t.TempDir(), "missing")}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			store := newTestStore(t)
 			var out bytes.Buffer
 
-			if err := run(tt.args, store, &out); err == nil {
+			if err := run(tt.args, failingStoreFunc(), &out); err == nil {
 				t.Fatalf("run(%v) error = nil, want an error", tt.args)
 			}
 		})
