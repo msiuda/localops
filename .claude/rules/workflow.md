@@ -80,3 +80,11 @@ At the end, provide a concise summary containing:
 Do not create Git commits unless explicitly requested.
 
 Do not use destructive Git operations such as `reset --hard`, forced checkout, or rewriting history unless explicitly requested.
+
+## Local machine safety
+
+Do not execute commands that create, modify, or delete files outside the repository unless explicitly required by the task or approved by the user.
+
+When manually smoke-testing behavior that normally writes to user directories, isolate the environment using a temporary HOME or another explicit temporary location.
+
+Do not use the developer's real application config, cache, or data directories for verification.
