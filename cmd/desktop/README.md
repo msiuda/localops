@@ -5,6 +5,12 @@ The LocalOps desktop application, built with [Wails v3](https://v3.wails.io/)
 [README](../../README.md) for the full picture — this file only covers
 running this app directly.
 
+Prerequisites: Go, Node.js, and [pnpm](https://pnpm.io/installation) (the
+frontend's package manager — `frontend/package.json` pins the exact
+version). The Wails v3 CLI itself is installed automatically by the root
+`make bootstrap` (see the root README); the raw `wails3` commands below
+assume it's already on your `PATH`.
+
 ## Development
 
 ```bash

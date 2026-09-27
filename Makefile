@@ -80,18 +80,26 @@ bindings: ## Regenerate Wails TypeScript bindings
 
 ##@ Frontend
 
+.PHONY: check-pnpm
+check-pnpm: ## Fail clearly if pnpm (LocalOps's frontend package manager) is not installed
+	@command -v pnpm >/dev/null 2>&1 || { \
+		echo "pnpm is required but was not found on PATH."; \
+		echo "LocalOps uses pnpm for frontend dependencies - install it from https://pnpm.io/installation"; \
+		exit 1; \
+	}
+
 .PHONY: frontend-install
-frontend-install: ## Install frontend dependencies (npm ci)
+frontend-install: check-pnpm ## Install frontend dependencies (pnpm install --frozen-lockfile)
 	@printf "$(BLUE)Installing frontend dependencies...$(NC)\n"
-	cd $(FRONTEND_DIR) && npm ci
+	cd $(FRONTEND_DIR) && pnpm install --frozen-lockfile
 
 .PHONY: frontend-typecheck
-frontend-typecheck: ## Run the frontend typecheck script
-	cd $(FRONTEND_DIR) && npm run typecheck
+frontend-typecheck: check-pnpm ## Run the frontend typecheck script
+	cd $(FRONTEND_DIR) && pnpm typecheck
 
 .PHONY: frontend-build
-frontend-build: ## Run the frontend production build
-	cd $(FRONTEND_DIR) && npm run build
+frontend-build: check-pnpm ## Run the frontend production build
+	cd $(FRONTEND_DIR) && pnpm build
 
 ##@ Quality
 

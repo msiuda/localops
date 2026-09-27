@@ -1,4 +1,27 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <rect x="0" y="0" width="1024" height="1024" fill="#5b8def"/>
-  <path d="M 306 288 L 384 288 L 384 670 L 664 670 L 664 748 L 306 748 Z" fill="#ffffff"/>
+  <!-- LocalOps application icon — approved A3 "Dark Blue Material" direction.
+       LO monogram (Variant A: shared-geometry ligature, the L's foot flows
+       directly into the O's ring) on a deep blue-black material base with
+       very subtle top-down directional lighting. Full-bleed, no baked-in
+       corner rounding: native platform tooling (Icon Composer for macOS)
+       applies its own squircle mask, shadow, and specular highlight. -->
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#232B48"/>
+      <stop offset="100%" stop-color="#12151F"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#8B93B8" stop-opacity="0.14"/>
+      <stop offset="100%" stop-color="#8B93B8" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="1024" height="1024" fill="url(#bg)"/>
+  <rect x="0" y="0" width="1024" height="440" fill="url(#sheen)"/>
+  <g transform="translate(-109.7,-13.8) scale(1.162)" fill="#EDEFF6">
+    <rect x="260" y="160" width="130" height="480" rx="24"/>
+    <rect x="260" y="510" width="260" height="130" rx="24"/>
+    <path fill-rule="evenodd" d="
+      M 470,575 A170,170 0 1,0 810,575 A170,170 0 1,0 470,575
+      M 592,575 A58,58 0 1,0 708,575 A58,58 0 1,0 592,575"/>
+  </g>
 </svg>

@@ -52,9 +52,9 @@ tasks:
       - node_modules
     preconditions:
       - sh: pnpm --version
-        msg: "pnpm not found"
+        msg: "pnpm not found. Install it from https://pnpm.io/installation (LocalOps's default frontend package manager)."
     cmds:
-      - pnpm install
+      - pnpm install --frozen-lockfile
 
   install:frontend:deps:yarn:
     dir: frontend

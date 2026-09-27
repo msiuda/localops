@@ -208,12 +208,15 @@ computed in Go.
 
 ### Developing the desktop app
 
+Prerequisites: Go, Node.js, [pnpm](https://pnpm.io/installation) (LocalOps's
+frontend package manager), and Make (for the convenience workflow below).
+Wails itself does not need to be installed manually — `make bootstrap`
+installs the pinned version.
+
 The recommended entry point is the root `Makefile` (run `make help` for the
 full list of targets; it's a convenience wrapper around the commands below,
-not a requirement for building LocalOps). On a machine that already has Go,
-Node/npm, and Make, `make bootstrap` is sufficient for first-time setup —
-it also installs the pinned Wails CLI, so a prior manual `go install
-.../wails3` is not required:
+not a requirement for building LocalOps). `make bootstrap` is sufficient for
+first-time setup:
 
 ```bash
 make bootstrap   # one-time: install pinned Wails CLI, frontend deps, generate bindings
