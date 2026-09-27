@@ -248,6 +248,64 @@ func TestInspect_NodeProject_DeclaredPackageManager(t *testing.T) {
 	}
 }
 
+func TestInspect_NodeProject_RecognizedScripts(t *testing.T) {
+	dir := t.TempDir()
+	content := `{
+		"name": "example-package",
+		"scripts": {
+			"lint": "eslint .",
+			"typecheck": "tsc --noEmit",
+			"test": "vitest run",
+			"build": "vite build"
+		}
+	}`
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	insp, err := project.Inspect(dir)
+	if err != nil {
+		t.Fatalf("Inspect() error = %v", err)
+	}
+
+	if !insp.NodeScriptLint {
+		t.Error("NodeScriptLint = false, want true")
+	}
+	if !insp.NodeScriptTypecheck {
+		t.Error("NodeScriptTypecheck = false, want true")
+	}
+	if !insp.NodeScriptTest {
+		t.Error("NodeScriptTest = false, want true")
+	}
+	if !insp.NodeScriptBuild {
+		t.Error("NodeScriptBuild = false, want true")
+	}
+}
+
+func TestInspect_NodeProject_UnrelatedScriptsIgnored(t *testing.T) {
+	dir := t.TempDir()
+	content := `{
+		"name": "example-package",
+		"scripts": {
+			"start": "node index.js",
+			"dev": "node --watch index.js"
+		}
+	}`
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	insp, err := project.Inspect(dir)
+	if err != nil {
+		t.Fatalf("Inspect() error = %v", err)
+	}
+
+	if insp.NodeScriptLint || insp.NodeScriptTypecheck || insp.NodeScriptTest || insp.NodeScriptBuild {
+		t.Errorf("expected no recognized scripts, got Lint=%t Typecheck=%t Test=%t Build=%t",
+			insp.NodeScriptLint, insp.NodeScriptTypecheck, insp.NodeScriptTest, insp.NodeScriptBuild)
+	}
+}
+
 func TestInspect_NodeProject_MalformedPackageJSON(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte("{not valid json"), 0o644); err != nil {

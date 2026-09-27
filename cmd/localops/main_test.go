@@ -7,9 +7,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/msiuda/localops/internal/doctor"
 	"github.com/msiuda/localops/internal/project"
 	"github.com/msiuda/localops/internal/storage"
+	"github.com/msiuda/localops/internal/validation"
 )
 
 func newTestStore(t *testing.T) *storage.Store {
@@ -229,6 +232,75 @@ func TestRun_Overview_LoadFailure(t *testing.T) {
 	}
 }
 
+func TestRun_Validate_PlainProject(t *testing.T) {
+	projectDir := t.TempDir()
+
+	var out bytes.Buffer
+	if err := run([]string{"validate", projectDir}, failingStoreFunc(), &out); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+
+	got := out.String()
+	if !strings.Contains(got, "LocalOps Validation") {
+		t.Errorf("output = %q, want it to contain the Validation header", got)
+	}
+	if !strings.Contains(got, "No required executables detected.") {
+		t.Errorf("output = %q, want it to report no required executables", got)
+	}
+	if !strings.Contains(got, "No validation checks detected.") {
+		t.Errorf("output = %q, want it to report no validation checks", got)
+	}
+}
+
+func TestRun_Validate_InvalidPath(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing")
+
+	var out bytes.Buffer
+	if err := run([]string{"validate", missing}, failingStoreFunc(), &out); err == nil {
+		t.Fatal("run() error = nil, want an error for a missing project path")
+	}
+}
+
+func TestRenderValidation(t *testing.T) {
+	result := validation.Result{
+		Path: "/projects/demo",
+		Doctor: doctor.Report{
+			Checks: []doctor.CheckResult{
+				{Tool: "node", Available: true, Version: "v22.14.0", OK: true},
+			},
+		},
+		Checks: []validation.CheckResult{
+			{Name: "lint", Command: "pnpm run lint", Status: validation.StatusPassed, Duration: 1800 * time.Millisecond},
+			{
+				Name:     "build",
+				Command:  "pnpm run build",
+				Status:   validation.StatusFailed,
+				Duration: 7400 * time.Millisecond,
+				Output:   "TypeScript compilation failed...",
+			},
+			{Name: "test", Command: "pnpm run test", Status: validation.StatusBlocked, Detail: "dependencies are not installed"},
+		},
+	}
+
+	var out bytes.Buffer
+	renderValidation(&out, result)
+
+	got := out.String()
+	for _, want := range []string{
+		"Project: /projects/demo",
+		"[OK] node — v22.14.0",
+		"[OK] lint —",
+		"[FAIL] build —",
+		"TypeScript compilation failed...",
+		"[BLOCKED] test — dependencies are not installed",
+		"1 passed, 1 failed, 1 blocked",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output = %q, want it to contain %q", got, want)
+		}
+	}
+}
+
 func TestRun_Help(t *testing.T) {
 	tests := []struct {
 		name string
@@ -243,6 +315,8 @@ func TestRun_Help(t *testing.T) {
 		{name: "doctor help", args: []string{"doctor", "help"}, want: doctorHelp},
 		{name: "overview --help", args: []string{"overview", "--help"}, want: overviewHelp},
 		{name: "overview help", args: []string{"overview", "help"}, want: overviewHelp},
+		{name: "validate --help", args: []string{"validate", "--help"}, want: validateHelp},
+		{name: "validate help", args: []string{"validate", "help"}, want: validateHelp},
 	}
 
 	for _, tt := range tests {
@@ -278,6 +352,8 @@ func TestRun_InvalidArguments(t *testing.T) {
 		{name: "doctor without path", args: []string{"doctor"}},
 		{name: "doctor with too many arguments", args: []string{"doctor", "a", "b"}},
 		{name: "overview with unexpected argument", args: []string{"overview", "extra"}},
+		{name: "validate without path", args: []string{"validate"}},
+		{name: "validate with too many arguments", args: []string{"validate", "a", "b"}},
 	}
 
 	for _, tt := range tests {

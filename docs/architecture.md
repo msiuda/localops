@@ -98,6 +98,7 @@ localops/
 │   ├── project/
 │   ├── doctor/
 │   ├── overview/
+│   ├── validation/
 │   └── storage/
 │
 ├── docs/
@@ -212,6 +213,31 @@ Overview composes `project.Inspect` and `doctor.Run` rather than duplicating the
 
 ---
 
+## Validation module
+
+The `validation` package actively runs a project's validation commands (a Go module's `test`/`vet`/`build`, and a Node.js project's recognized `package.json` scripts) after checking, via project inspection and Doctor, that the required tools are usable.
+
+Validation depends on `project` and `doctor`. Neither depends on Validation:
+
+```text
+validation
+  ├── project
+  └── doctor
+
+CLI
+  └── validation
+```
+
+Unlike project inspection and most of Doctor, which are read-only, Validation is explicitly allowed to execute real project commands, because the user invoked `localops validate`. It only ever runs the specific commands/scripts documented in `docs/product.md`; it never installs dependencies, modifies package manifests, or runs arbitrary scripts.
+
+Before executing anything, Validation inspects the project and runs Doctor. Each validation check (e.g. `go test`, or a Node.js script such as `lint`) is evaluated independently: if the specific tool a check depends on is unavailable or incompatible, that check (and others depending on the same tool) is reported as blocked, but unrelated checks still run.
+
+Validation assigns each check one of three explicit states: passed, failed, or blocked. This is intentionally small, not a severity system, rule engine, or generic job framework.
+
+Command execution uses `os/exec` in production, with the working directory set explicitly per command (the process-wide working directory is never changed), behind a small function-based seam so tests never execute real tools.
+
+---
+
 ## Persistence
 
 Registered projects must survive between LocalOps executions.
@@ -247,6 +273,8 @@ Code interacting with the filesystem should:
 - avoid modifying inspected projects unless a feature explicitly requires it.
 
 Project inspection must be read-only during the initial milestone.
+
+Validation is a deliberate, documented exception: it executes real project commands (see "Validation module"), but only the specific commands/scripts it documents, and never against LocalOps's own filesystem state.
 
 ---
 

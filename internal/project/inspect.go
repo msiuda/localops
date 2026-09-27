@@ -24,6 +24,10 @@ type Inspection struct {
 	NodeEngineNode             string
 	NodeEngineNpm              string
 	NodeDeclaredPackageManager string
+	NodeScriptLint             bool
+	NodeScriptTypecheck        bool
+	NodeScriptTest             bool
+	NodeScriptBuild            bool
 }
 
 // Inspect reads basic, read-only metadata about the project at path.
@@ -67,6 +71,11 @@ func Inspect(path string) (Inspection, error) {
 		}
 	}
 
+	_, hasLintScript := pkg.Scripts["lint"]
+	_, hasTypecheckScript := pkg.Scripts["typecheck"]
+	_, hasTestScript := pkg.Scripts["test"]
+	_, hasBuildScript := pkg.Scripts["build"]
+
 	return Inspection{
 		Name:                       proj.Name,
 		Path:                       proj.Path,
@@ -79,6 +88,10 @@ func Inspect(path string) (Inspection, error) {
 		NodeEngineNode:             pkg.Engines.Node,
 		NodeEngineNpm:              pkg.Engines.Npm,
 		NodeDeclaredPackageManager: pkg.PackageManager,
+		NodeScriptLint:             hasLintScript,
+		NodeScriptTypecheck:        hasTypecheckScript,
+		NodeScriptTest:             hasTestScript,
+		NodeScriptBuild:            hasBuildScript,
 	}, nil
 }
 
@@ -136,12 +149,13 @@ type nodePackageJSON struct {
 		Node string `json:"node"`
 		Npm  string `json:"npm"`
 	} `json:"engines"`
-	PackageManager string `json:"packageManager"`
+	PackageManager string            `json:"packageManager"`
+	Scripts        map[string]string `json:"scripts"`
 }
 
 // readNodePackageJSON reports whether dir contains a package.json file and,
-// if so, the metadata declared by its top-level "name", "engines", and
-// "packageManager" fields.
+// if so, the metadata declared by its top-level "name", "engines",
+// "packageManager", and "scripts" fields.
 //
 // A package.json entry that is not a regular file, or that cannot be parsed
 // as JSON, is treated as an error rather than silently ignored.

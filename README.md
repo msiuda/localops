@@ -49,7 +49,26 @@ tools a project needs.
     (for example, it no longer exists). An unavailable project does not
     stop the rest of the overview from running.
 
-Everything above is read-only with respect to the project being inspected.
+Registration, inspection, Doctor, and Overview are all read-only with
+respect to the project being examined.
+
+- **Validate** (`localops validate <path>`) is different: it **actively
+  runs** the project's validation commands, rather than only inspecting or
+  diagnosing. Before running anything, it inspects the project and runs
+  Doctor; if a required tool is unavailable or incompatible, only the
+  checks that depend on it are blocked — independent checks still run.
+  - For a Go module: `go test ./...`, `go vet ./...`, `go build ./...`.
+  - For a Node.js project: its recognized `package.json` scripts — `lint`,
+    `typecheck`, `test`, `build` — run through the project's effective
+    package manager (e.g. `pnpm run lint`). A script is only run if
+    declared; unrelated scripts are ignored. Node checks are blocked if
+    `node_modules` is missing (dependencies are not installed).
+  - Validate never installs dependencies, modifies package manifests, runs
+    package-manager install/update commands, deploys anything, runs dev
+    servers, runs migrations or seed commands, or runs any script beyond
+    the recognized ones above.
+  - A project can be both a Go module and a Node.js project; Validate runs
+    checks for both.
 
 ## Commands
 
@@ -60,10 +79,12 @@ localops project list
 localops project inspect <path>
 localops doctor <path>
 localops overview
+localops validate <path>
 ```
 
-Run `localops help`, `localops project help`, `localops doctor --help`, or
-`localops overview --help` for details on any command.
+Run `localops help`, `localops project help`, `localops doctor --help`,
+`localops overview --help`, or `localops validate --help` for details on
+any command.
 
 ## Running from the repository
 
@@ -71,6 +92,7 @@ Run `localops help`, `localops project help`, `localops doctor --help`, or
 go run ./cmd/localops project inspect .
 go run ./cmd/localops doctor .
 go run ./cmd/localops overview
+go run ./cmd/localops validate .
 ```
 
 ## Building
@@ -100,6 +122,7 @@ go run ./cmd/localops project add .
 go run ./cmd/localops overview
 go run ./cmd/localops project inspect .
 go run ./cmd/localops doctor .
+go run ./cmd/localops validate .
 ```
 
 After installing:
@@ -109,4 +132,9 @@ localops project add .
 localops overview
 localops project inspect .
 localops doctor .
+localops validate .
 ```
+
+`localops validate` actively runs the project's own validation commands
+(e.g. `go test`, or `pnpm run lint`) — unlike the other commands above, it
+is not read-only.

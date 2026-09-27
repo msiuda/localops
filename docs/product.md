@@ -92,11 +92,35 @@ projects from being evaluated.
 Overview does not introduce new detection or diagnostics of its own; it
 composes the existing project inspection and Doctor capabilities.
 
+## Project Validation
+
+Validation answers a different question than Doctor: given the project's
+detected technology and the current local environment, can its basic
+project checks actually run successfully on this machine?
+
+Unlike project inspection and Doctor, which are read-only, Validation is an
+explicitly active operation: the user invoked `localops validate`, and it
+actively runs the project's own validation commands.
+
+For this milestone, Validation runs:
+
+- for a Go module: `go test`, `go vet`, and `go build`,
+- for a Node.js project: its recognized `package.json` scripts (`lint`,
+  `typecheck`, `test`, `build`), through the project's effective package
+  manager.
+
+Before running anything, Validation inspects the project and runs Doctor.
+If a required tool is unavailable or incompatible, only the checks that
+depend on it are blocked; independent checks still run.
+
+Validation never installs dependencies, modifies package manifests, runs
+package-manager install/update commands, deploys anything, or runs any
+command beyond the specific ones listed above.
+
 ## Future direction
 
 LocalOps may later support:
 
-- build validation,
 - environment comparison,
 - CI configuration inspection,
 - deployment simulation,

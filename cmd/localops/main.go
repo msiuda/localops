@@ -7,11 +7,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/msiuda/localops/internal/doctor"
 	"github.com/msiuda/localops/internal/overview"
 	"github.com/msiuda/localops/internal/project"
 	"github.com/msiuda/localops/internal/storage"
+	"github.com/msiuda/localops/internal/validation"
 )
 
 func main() {
@@ -41,6 +43,8 @@ func run(args []string, getStore storeFunc, out io.Writer) error {
 		return runDoctor(args[1:], out)
 	case "overview":
 		return runOverview(args[1:], getStore, out)
+	case "validate":
+		return runValidate(args[1:], out)
 	default:
 		return usageError()
 	}
@@ -343,6 +347,79 @@ func effectivePackageManager(report doctor.Report) string {
 	return ""
 }
 
+func runValidate(args []string, out io.Writer) error {
+	if len(args) == 1 && isHelpFlag(args[0]) {
+		fmt.Fprint(out, validateHelp)
+		return nil
+	}
+	if len(args) != 1 {
+		return fmt.Errorf("usage: localops validate <path>")
+	}
+
+	result, err := validation.Validate(args[0])
+	if err != nil {
+		return fmt.Errorf("validate: %w", err)
+	}
+
+	renderValidation(out, result)
+	return nil
+}
+
+// renderValidation prints result in the format described by
+// "localops validate --help". It is a pure presentation step, kept
+// separate from running Validation itself.
+func renderValidation(out io.Writer, result validation.Result) {
+	fmt.Fprintln(out, "LocalOps Validation")
+	fmt.Fprintf(out, "Project: %s\n\n", result.Path)
+
+	fmt.Fprintln(out, "Environment")
+	if len(result.Doctor.Checks) == 0 {
+		fmt.Fprintln(out, "No required executables detected.")
+	}
+	for _, check := range result.Doctor.Checks {
+		if check.OK {
+			if check.Note != "" {
+				fmt.Fprintf(out, "[OK] %s — %s (%s)\n", check.Tool, check.Version, check.Note)
+			} else {
+				fmt.Fprintf(out, "[OK] %s — %s\n", check.Tool, check.Version)
+			}
+			continue
+		}
+		fmt.Fprintf(out, "[FAIL] %s — %s\n", check.Tool, check.Detail)
+	}
+
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "Checks")
+
+	if len(result.Checks) == 0 {
+		fmt.Fprintln(out, "No validation checks detected.")
+		return
+	}
+
+	var passed, failed, blocked int
+	for _, check := range result.Checks {
+		switch check.Status {
+		case validation.StatusPassed:
+			passed++
+			fmt.Fprintf(out, "[OK] %s — %s\n", check.Name, check.Duration.Round(100*time.Millisecond))
+		case validation.StatusFailed:
+			failed++
+			fmt.Fprintf(out, "[FAIL] %s — %s\n", check.Name, check.Duration.Round(100*time.Millisecond))
+			if check.Output != "" {
+				for _, line := range strings.Split(check.Output, "\n") {
+					fmt.Fprintf(out, "  %s\n", line)
+				}
+			}
+		case validation.StatusBlocked:
+			blocked++
+			fmt.Fprintf(out, "[BLOCKED] %s — %s\n", check.Name, check.Detail)
+		}
+	}
+
+	fmt.Fprintln(out)
+	fmt.Fprintf(out, "%d passed, %d failed, %d blocked\n", passed, failed, blocked)
+}
+
 func defaultStore() (*storage.Store, error) {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
@@ -360,9 +437,10 @@ Commands:
   project    Manage and inspect local projects
   doctor     Diagnose a local project
   overview   Show a health summary of all registered projects
+  validate   Actively run a project's validation checks
 
-Run 'localops project help', 'localops doctor --help', or
-'localops overview --help' for details.
+Run 'localops project help', 'localops doctor --help',
+'localops overview --help', or 'localops validate --help' for details.
 `
 
 const projectHelp = `Usage:
@@ -389,6 +467,22 @@ prints a concise summary of its health: healthy, has issues, or
 unavailable (for example, if its registered path no longer exists).
 `
 
+const validateHelp = `Usage:
+  localops validate <path>
+
+Actively runs the project's validation checks:
+  - for a Go module: 'go test ./...', 'go vet ./...', 'go build ./...',
+  - for a Node.js project: its recognized package.json scripts (lint,
+    typecheck, test, build), run through the project's effective package
+    manager.
+
+Unlike inspection and most of Doctor, this executes real project commands.
+It never installs dependencies, modifies package manifests, or runs any
+other script. A required tool that is unavailable or incompatible, or
+missing Node.js dependencies, blocks only the checks that depend on it;
+independent checks still run.
+`
+
 // isHelpFlag reports whether arg requests help rather than naming a
 // subcommand or path.
 func isHelpFlag(arg string) bool {
@@ -396,5 +490,5 @@ func isHelpFlag(arg string) bool {
 }
 
 func usageError() error {
-	return fmt.Errorf("usage: localops <project|doctor|overview> ...")
+	return fmt.Errorf("usage: localops <project|doctor|overview|validate> ...")
 }
