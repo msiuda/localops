@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/msiuda/localops/internal/doctor"
 	"github.com/msiuda/localops/internal/project"
 	"github.com/msiuda/localops/internal/storage"
 )
@@ -31,6 +32,8 @@ func run(args []string, getStore storeFunc, out io.Writer) error {
 	switch args[0] {
 	case "project":
 		return runProject(args[1:], getStore, out)
+	case "doctor":
+		return runDoctor(args[1:], out)
 	default:
 		return usageError()
 	}
@@ -138,6 +141,48 @@ func runProjectInspect(args []string, out io.Writer) error {
 	return nil
 }
 
+func runDoctor(args []string, out io.Writer) error {
+	if len(args) != 1 {
+		return fmt.Errorf("usage: localops doctor <path>")
+	}
+
+	insp, err := project.Inspect(args[0])
+	if err != nil {
+		return fmt.Errorf("doctor: %w", err)
+	}
+
+	report := doctor.Run(insp)
+
+	fmt.Fprintf(out, "Doctor: %s\n\n", report.Path)
+
+	if len(report.Checks) == 0 {
+		fmt.Fprintln(out, "No required executables detected.")
+		return nil
+	}
+
+	issues := 0
+	for _, check := range report.Checks {
+		if check.Available {
+			fmt.Fprintf(out, "[OK] %s\n", check.Tool)
+			continue
+		}
+		issues++
+		fmt.Fprintf(out, "[FAIL] %s — %s\n", check.Tool, check.Detail)
+	}
+
+	fmt.Fprintln(out)
+	switch issues {
+	case 0:
+		fmt.Fprintln(out, "No issues found")
+	case 1:
+		fmt.Fprintln(out, "1 issue found")
+	default:
+		fmt.Fprintf(out, "%d issues found\n", issues)
+	}
+
+	return nil
+}
+
 func defaultStore() (*storage.Store, error) {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
@@ -149,5 +194,5 @@ func defaultStore() (*storage.Store, error) {
 }
 
 func usageError() error {
-	return fmt.Errorf("usage: localops project <add|list|inspect> ...")
+	return fmt.Errorf("usage: localops <project|doctor> ...")
 }

@@ -110,6 +110,32 @@ func TestRun_ProjectInspect(t *testing.T) {
 	}
 }
 
+func TestRun_Doctor_PlainProject(t *testing.T) {
+	projectDir := t.TempDir()
+
+	var out bytes.Buffer
+	if err := run([]string{"doctor", projectDir}, failingStoreFunc(), &out); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+
+	got := out.String()
+	if !strings.Contains(got, "Doctor: ") {
+		t.Errorf("output = %q, want it to contain a Doctor header", got)
+	}
+	if !strings.Contains(got, "No required executables detected.") {
+		t.Errorf("output = %q, want it to report no required executables", got)
+	}
+}
+
+func TestRun_Doctor_InvalidPath(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing")
+
+	var out bytes.Buffer
+	if err := run([]string{"doctor", missing}, failingStoreFunc(), &out); err == nil {
+		t.Fatal("run() error = nil, want an error for a missing project path")
+	}
+}
+
 func TestRun_InvalidArguments(t *testing.T) {
 	tests := []struct {
 		name string
@@ -125,6 +151,8 @@ func TestRun_InvalidArguments(t *testing.T) {
 		{name: "inspect without path", args: []string{"project", "inspect"}},
 		{name: "inspect with too many arguments", args: []string{"project", "inspect", "a", "b"}},
 		{name: "inspect missing path", args: []string{"project", "inspect", filepath.Join(t.TempDir(), "missing")}},
+		{name: "doctor without path", args: []string{"doctor"}},
+		{name: "doctor with too many arguments", args: []string{"doctor", "a", "b"}},
 	}
 
 	for _, tt := range tests {
