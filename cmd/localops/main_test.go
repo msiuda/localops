@@ -59,6 +59,19 @@ func TestRun_ProjectAdd(t *testing.T) {
 	}
 }
 
+func TestRun_ProjectAdd_Duplicate(t *testing.T) {
+	store := newTestStore(t)
+	projectDir := t.TempDir()
+	var out bytes.Buffer
+
+	if err := run([]string{"project", "add", projectDir}, testStoreFunc(store), &out); err != nil {
+		t.Fatalf("first run() error = %v", err)
+	}
+	if err := run([]string{"project", "add", projectDir}, testStoreFunc(store), &out); err == nil {
+		t.Fatal("second run() error = nil, want an error for a duplicate path")
+	}
+}
+
 func TestRun_ProjectList(t *testing.T) {
 	store := newTestStore(t)
 	projectDir := t.TempDir()

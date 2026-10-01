@@ -101,11 +101,33 @@ frontend-typecheck: check-pnpm ## Run the frontend typecheck script
 frontend-build: check-pnpm ## Run the frontend production build
 	cd $(FRONTEND_DIR) && pnpm build
 
+.PHONY: frontend-lint
+frontend-lint: check-pnpm ## Lint the frontend (ESLint)
+	cd $(FRONTEND_DIR) && pnpm lint
+
+.PHONY: frontend-lint-fix
+frontend-lint-fix: check-pnpm ## Lint the frontend and auto-fix what ESLint can
+	cd $(FRONTEND_DIR) && pnpm lint:fix
+
+.PHONY: frontend-format
+frontend-format: check-pnpm ## Format the frontend with Prettier (may modify files)
+	cd $(FRONTEND_DIR) && pnpm format
+
+.PHONY: frontend-format-check
+frontend-format-check: check-pnpm ## Check frontend formatting without modifying files
+	cd $(FRONTEND_DIR) && pnpm format:check
+
+.PHONY: frontend-test
+frontend-test: check-pnpm ## Run frontend tests (Vitest + Testing Library)
+	cd $(FRONTEND_DIR) && pnpm test:run
+
 ##@ Quality
 
 .PHONY: fmt
-fmt: ## Format Go source files (may modify files)
+fmt: ## Format Go AND frontend source (may modify files) — use `check` to verify without changes
+	@printf "$(BLUE)Formatting Go...$(NC)\n"
 	gofmt -l -w .
+	$(MAKE) frontend-format
 
 .PHONY: test
 test: ## Run Go tests
@@ -119,7 +141,7 @@ vet: ## Run go vet
 typecheck: frontend-typecheck ## Run frontend typecheck (alias)
 
 .PHONY: check
-check: ## Run all non-mutating pre-commit verification (gofmt check, test, vet, frontend typecheck+build)
+check: ## Run all non-mutating pre-commit verification (Go + frontend); never auto-fixes — use `fmt` for that
 	@printf "$(BLUE)Checking gofmt cleanliness...$(NC)\n"
 	@unformatted="$$(gofmt -l .)"; \
 	if [ -n "$$unformatted" ]; then \
@@ -130,6 +152,9 @@ check: ## Run all non-mutating pre-commit verification (gofmt check, test, vet, 
 	$(MAKE) test
 	$(MAKE) vet
 	$(MAKE) frontend-typecheck
+	$(MAKE) frontend-lint
+	$(MAKE) frontend-test
+	$(MAKE) frontend-format-check
 	$(MAKE) frontend-build
 
 .PHONY: verify
@@ -138,12 +163,16 @@ verify: check ## Alias for check
 ##@ Cleanup
 
 .PHONY: clean
-clean: ## Remove generated build outputs (desktop bin/dist/bindings, root bin)
+clean: ## Remove generated build outputs (desktop bin/dist/bindings/coverage, root bin)
 	@printf "$(BLUE)Removing generated build outputs...$(NC)\n"
 	rm -rf bin
 	rm -rf $(DESKTOP_DIR)/bin
 	rm -rf $(FRONTEND_DIR)/dist
 	rm -rf $(FRONTEND_DIR)/bindings
+	rm -rf $(FRONTEND_DIR)/coverage
+# Deliberately NOT removed: src/routeTree.gen.ts — it's TanStack Router's
+# generated route tree, but it's committed to source control (see
+# docs/frontend.md), not a disposable build artifact.
 
 .PHONY: clean-all
 clean-all: clean ## Also remove frontend node_modules

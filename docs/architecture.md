@@ -282,18 +282,25 @@ cmd/localops
 cmd/desktop
   └── internal/desktop
        ├── storage
-       └── overview
-            ├── project
-            └── doctor
+       ├── overview
+       │    ├── project
+       │    └── doctor
+       └── environment
 
 React frontend
   └── Wails generated binding
        └── internal/desktop
 ```
 
-Its `Service.GetOverview` loads registered projects from `storage`, calls the existing `overview.Build`, and converts each `overview.ProjectResult` into a small UI-facing DTO (`ProjectCard`): name, path, health, detected technologies, package manager, issue count, and concise failed-check findings — never raw `project.Inspection`/`doctor.Report` structures, and never secret or environment-variable values. `Service` is bound to the frontend through Wails v3's generated TypeScript bindings; there is no HTTP server, REST API, or manual JSON-RPC layer.
+Its `Service.GetOverview` loads registered projects from `storage`, calls the existing `overview.Build`, and converts each `overview.ProjectResult` into a small UI-facing DTO (`ProjectCard`): name, path, health, detected technologies, package manager, issue count, and concise failed-check findings — never raw `project.Inspection`/`doctor.Report` structures, and never secret or environment-variable values.
 
-The frontend is presentation only: it renders `ProjectCard` data and tracks loading/empty/error UI state, but never recomputes project health itself. `internal/desktop` does not duplicate storage, project inspection, Doctor, Overview, Validation, or Environment logic; it composes them.
+`Service.GetProjectDetail(path)` is the same pattern for a single project's detail view: it first confirms `path` belongs to a project already in `storage` (never an arbitrary unregistered path), then composes the existing `overview.Build` (for health/technologies/package manager/the full Doctor report) and `environment.Analyze` (for the Environment Contract) into a small `ProjectDetail` DTO. An `environment.Analyze` failure is carried as `Environment.Error` rather than failing the whole detail, so Overview/Doctor information for the project is never hidden by an Environment failure. `ProjectDetail`'s Environment fields mirror `environment.Result`'s own shape — names, source filenames, counts, and satisfied/missing booleans — and are structurally incapable of carrying a variable's value, matching the Environment module's own security model. `ProjectDetail` carries no Validation preview or plan: Validation is not runnable from the desktop app yet, and this package does not recreate `internal/validation`'s decisions to speculatively describe what it would do.
+
+`Service.AddProject(path)` registers a new project by calling `storage.Store.AddProject` — the single shared registration operation both the CLI's `project add` and the desktop app use, so registration behaves identically from either entry point (path resolution via `project.FromPath`, duplicate-path rejection, and persistence all live once, in `storage`, not duplicated in `internal/desktop`). `Service.PickProjectDirectory` wraps Wails v3's native `application.Get().Dialog.OpenFile()` directory picker; a user cancelling it returns an empty path and no error, which the frontend treats as "do nothing."
+
+`Service` is bound to the frontend through Wails v3's generated TypeScript bindings; there is no HTTP server, REST API, or manual JSON-RPC layer.
+
+The frontend is presentation only: it renders `ProjectCard`/`ProjectDetail` data through TanStack Query (backed by a small Wails API boundary module, `entities/project/api`) and TanStack Router for navigation, but never recomputes project health itself. `internal/desktop` does not duplicate storage, project inspection, Doctor, Overview, Validation, or Environment logic; it composes them. See `docs/frontend.md` for the frontend's own architecture (routing, Query, folder structure, Tailwind tokens, testing).
 
 The desktop window is frameless on macOS (Wails v3's `Frameless` option), with default rounded AppKit corners preserved and no transparent/private-API visual effects. Custom window controls and drag regions are implemented entirely in the frontend (a `--wails-draggable` CSS hook), not via a restored native title bar.
 

@@ -96,3 +96,36 @@ func (s *Store) Save(projects []project.Project) error {
 
 	return nil
 }
+
+// AddProject registers the project at path: it resolves path the same way
+// project.FromPath does (absolute path, name derived from the directory's
+// base name), rejects a path already registered (compared by its resolved
+// absolute path), and persists the result.
+//
+// This is the single shared registration operation: both the CLI ("project
+// add") and the desktop app's Add Project use it, so they register
+// projects identically.
+func (s *Store) AddProject(path string) (project.Project, error) {
+	proj, err := project.FromPath(path)
+	if err != nil {
+		return project.Project{}, err
+	}
+
+	projects, err := s.Load()
+	if err != nil {
+		return project.Project{}, fmt.Errorf("load registered projects: %w", err)
+	}
+
+	for _, existing := range projects {
+		if existing.Path == proj.Path {
+			return project.Project{}, fmt.Errorf("project already registered at %s", proj.Path)
+		}
+	}
+
+	projects = append(projects, proj)
+	if err := s.Save(projects); err != nil {
+		return project.Project{}, fmt.Errorf("save registered projects: %w", err)
+	}
+
+	return proj, nil
+}

@@ -77,24 +77,13 @@ func runProjectAdd(args []string, getStore storeFunc, out io.Writer) error {
 		return fmt.Errorf("usage: localops project add <path>")
 	}
 
-	proj, err := project.FromPath(args[0])
-	if err != nil {
-		return fmt.Errorf("add project: %w", err)
-	}
-
 	store, err := getStore()
 	if err != nil {
 		return fmt.Errorf("add project: %w", err)
 	}
 
-	projects, err := store.Load()
+	proj, err := store.AddProject(args[0])
 	if err != nil {
-		return fmt.Errorf("add project: %w", err)
-	}
-
-	projects = append(projects, proj)
-
-	if err := store.Save(projects); err != nil {
 		return fmt.Errorf("add project: %w", err)
 	}
 

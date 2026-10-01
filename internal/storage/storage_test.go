@@ -93,3 +93,87 @@ func TestStore_Load_CorruptedFile(t *testing.T) {
 		t.Fatal("Load() error = nil, want error for corrupted storage")
 	}
 }
+
+func TestStore_AddProject(t *testing.T) {
+	projectDir := t.TempDir()
+	store := storage.New(filepath.Join(t.TempDir(), "projects.json"))
+
+	got, err := store.AddProject(projectDir)
+	if err != nil {
+		t.Fatalf("AddProject() error = %v", err)
+	}
+
+	wantPath, err := filepath.Abs(projectDir)
+	if err != nil {
+		t.Fatalf("Abs() error = %v", err)
+	}
+	if got.Path != wantPath {
+		t.Errorf("Path = %q, want absolute path %q", got.Path, wantPath)
+	}
+	if got.Name != filepath.Base(wantPath) {
+		t.Errorf("Name = %q, want %q", got.Name, filepath.Base(wantPath))
+	}
+
+	projects, err := store.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if len(projects) != 1 || projects[0].Path != wantPath {
+		t.Fatalf("Load() = %v, want one project at %q", projects, wantPath)
+	}
+}
+
+func TestStore_AddProject_Duplicate(t *testing.T) {
+	projectDir := t.TempDir()
+	store := storage.New(filepath.Join(t.TempDir(), "projects.json"))
+
+	if _, err := store.AddProject(projectDir); err != nil {
+		t.Fatalf("first AddProject() error = %v", err)
+	}
+
+	if _, err := store.AddProject(projectDir); err == nil {
+		t.Fatal("second AddProject() error = nil, want an error for a duplicate path")
+	}
+
+	projects, err := store.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if len(projects) != 1 {
+		t.Errorf("Load() = %v, want the duplicate attempt to leave storage unchanged", projects)
+	}
+}
+
+func TestStore_AddProject_NonexistentPath(t *testing.T) {
+	store := storage.New(filepath.Join(t.TempDir(), "projects.json"))
+	missing := filepath.Join(t.TempDir(), "missing")
+
+	if _, err := store.AddProject(missing); err == nil {
+		t.Fatal("AddProject() error = nil, want an error for a nonexistent path")
+	}
+}
+
+func TestStore_AddProject_NotADirectory(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "file.txt")
+	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	store := storage.New(filepath.Join(t.TempDir(), "projects.json"))
+	if _, err := store.AddProject(file); err == nil {
+		t.Fatal("AddProject() error = nil, want an error for a non-directory path")
+	}
+}
+
+func TestStore_AddProject_LoadFailureIsError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "projects.json")
+	if err := os.WriteFile(path, []byte("not json"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	store := storage.New(path)
+	if _, err := store.AddProject(t.TempDir()); err == nil {
+		t.Fatal("AddProject() error = nil, want an error when existing storage is corrupted")
+	}
+}

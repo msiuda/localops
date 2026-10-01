@@ -1,60 +1,51 @@
-import { FolderGit2, RefreshCw, AlertCircle } from "lucide-react";
-import { ProjectRow } from "../../components/ProjectRow";
-import { SkeletonRow } from "../../components/SkeletonRow";
-import { EmptyState } from "../../components/EmptyState";
-import { useOverview } from "./useOverview";
-import "./ProjectsPage.css";
+import { FolderGit2, AlertCircle } from "lucide-react";
+import { ProjectRow, ProjectRowSkeleton, useProjectsOverviewQuery } from "@/entities/project";
+import { EmptyState } from "@/shared/ui/molecules/EmptyState";
+import { AddProjectButton } from "@/features/add-project/ui/AddProjectButton";
 
 export function ProjectsPage() {
-  const { state, refresh } = useOverview();
+  const { data, isPending, isError, error } = useProjectsOverviewQuery();
+  const projects = data?.projects ?? [];
 
   return (
-    <div className="projects-page">
-      <header className="projects-page__header drag-region">
+    <div className="flex h-full min-w-0 flex-col">
+      <header className="drag-region flex items-start justify-between px-7 pt-5.5 pb-4.5">
         <div>
-          <h1 className="projects-page__title">Projects</h1>
-          <p className="projects-page__subtitle">Your local development workspace</p>
+          <h1 className="text-text-primary m-0 text-xl font-bold tracking-tight">Projects</h1>
+          <p className="text-text-muted mt-1 mb-0 text-[12.5px]">Your local development workspace</p>
         </div>
-        <button
-          type="button"
-          className="projects-page__refresh no-drag"
-          onClick={refresh}
-          disabled={state.status === "loading"}
-          aria-label="Refresh projects"
-        >
-          <RefreshCw size={14} strokeWidth={2.2} className={state.status === "loading" ? "spin" : undefined} />
-          Refresh
-        </button>
+        <AddProjectButton className="no-drag" />
       </header>
 
-      <div className="projects-page__content">
-        {state.status === "loading" && (
-          <div className="projects-page__list">
-            <SkeletonRow />
-            <SkeletonRow />
-            <SkeletonRow />
+      <div className="flex-1 overflow-y-auto px-7 pb-7">
+        {isPending && (
+          <div className="flex flex-col gap-2">
+            <ProjectRowSkeleton />
+            <ProjectRowSkeleton />
+            <ProjectRowSkeleton />
           </div>
         )}
 
-        {state.status === "error" && (
+        {isError && (
           <EmptyState
             icon={<AlertCircle size={28} strokeWidth={1.5} />}
             title="Couldn't load projects"
-            description={state.message}
+            description={error instanceof Error ? error.message : String(error)}
           />
         )}
 
-        {state.status === "empty" && (
+        {!isPending && !isError && projects.length === 0 && (
           <EmptyState
             icon={<FolderGit2 size={28} strokeWidth={1.5} />}
             title="No projects yet"
-            description="Register a project from the CLI to see it here: localops project add <path>"
+            description="LocalOps tracks local projects you register. Add one to see its health here."
+            action={<AddProjectButton />}
           />
         )}
 
-        {state.status === "loaded" && (
-          <div className="projects-page__list">
-            {state.projects.map((project) => (
+        {!isPending && !isError && projects.length > 0 && (
+          <div className="flex flex-col gap-2">
+            {projects.map((project) => (
               <ProjectRow key={project.path} project={project} />
             ))}
           </div>

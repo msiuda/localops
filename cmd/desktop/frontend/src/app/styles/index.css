@@ -1,0 +1,129 @@
+@import "tailwindcss";
+@import "./tokens.css";
+
+/*
+ * Map LocalOps's own CSS custom properties (tokens.css) onto Tailwind v4's
+ * theme, so utilities like `bg-surface` or `text-text-primary` resolve to
+ * the SAME runtime custom property tokens.css already flips under
+ * `prefers-color-scheme: light` — one token source, no separate Tailwind
+ * light/dark config.
+ */
+@theme {
+  --color-bg: var(--bg);
+  --color-sidebar: var(--sidebar-bg);
+  --color-surface: var(--surface);
+  --color-surface-hover: var(--surface-hover);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+
+  --color-success: var(--success);
+  --color-success-bg: var(--success-bg);
+  --color-danger: var(--danger);
+  --color-danger-bg: var(--danger-bg);
+  --color-warning: var(--warning);
+  --color-warning-bg: var(--warning-bg);
+
+  --color-accent: var(--accent);
+  --color-accent-bg: var(--accent-bg);
+
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+}
+
+/*
+ * IMPORTANT: everything below MUST stay inside `@layer base`.
+ *
+ * `@import "tailwindcss"` expands to Tailwind's own `@layer theme, base,
+ * components, utilities` (plus its preflight reset, inside `base`). Per the
+ * CSS cascade-layers spec, ANY unlayered declaration beats ANY layered
+ * declaration, regardless of selector specificity or source order. A plain
+ * `button { cursor: default; background: none; }` written here as normal
+ * unlayered CSS would permanently defeat every Tailwind utility applied to
+ * a <button> (cursor-pointer, bg-surface, border, bg-[#ff5f57], ...),
+ * which is exactly the bug this file previously had. Putting these resets
+ * in `@layer base` keeps them as low-precedence defaults that Tailwind's
+ * own `components`/`utilities` layers (and thus every className in this
+ * app) can still intentionally override.
+ */
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  button,
+  input,
+  textarea {
+    font-family: inherit;
+    color: inherit;
+  }
+
+  button {
+    background: none;
+    border: none;
+    -webkit-app-region: no-drag;
+  }
+
+  /* Native button cursor semantics as a base default, not something every
+     component has to opt into with a utility class: an enabled button
+     reads as clickable, a disabled one doesn't. Still just a default —
+     anything with a Tailwind cursor-* utility wins, since utilities is a
+     later/higher-precedence Tailwind layer than base. */
+  button:not(:disabled) {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: default;
+  }
+
+  /* Mouse interaction should not show a focus ring, but keyboard navigation
+     must remain clearly visible for accessibility. */
+  :focus {
+    outline: none;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+
+  /* Wails draggable-region hooks. Anything with .drag-region can move the
+     window; interactive elements inside it opt back out with .no-drag so
+     they stay clickable. */
+  .drag-region {
+    --wails-draggable: drag;
+  }
+
+  .no-drag {
+    --wails-draggable: no-drag;
+  }
+}

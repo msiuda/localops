@@ -10,6 +10,7 @@ Before implementing non-trivial changes, read the relevant project documentation
 
 - `docs/product.md`
 - `docs/architecture.md`
+- `docs/frontend.md` (for any change inside `cmd/desktop/frontend`)
 
 Treat these documents as the source of truth for current product scope and architectural direction.
 
@@ -23,6 +24,7 @@ Follow the applicable rules defined in:
 - `.claude/rules/go.md`
 - `.claude/rules/testing.md`
 - `.claude/rules/workflow.md`
+- `.claude/rules/frontend.md` (for any change inside `cmd/desktop/frontend`)
 
 These rules are part of the project requirements.
 

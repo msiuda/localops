@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/msiuda/localops/internal/doctor"
+	"github.com/msiuda/localops/internal/environment"
 	"github.com/msiuda/localops/internal/overview"
 	"github.com/msiuda/localops/internal/project"
 	"github.com/msiuda/localops/internal/storage"
@@ -171,5 +172,153 @@ func TestToProjectCard_Unavailable(t *testing.T) {
 	}
 	if len(card.Technologies) != 0 {
 		t.Errorf("Technologies = %v, want none", card.Technologies)
+	}
+}
+
+func TestGetProjectDetail_NotRegistered(t *testing.T) {
+	svc := newTestService(t)
+
+	if _, err := svc.GetProjectDetail("/not/registered"); err == nil {
+		t.Fatal("GetProjectDetail() error = nil, want an error for an unregistered path")
+	}
+}
+
+func TestGetProjectDetail_Registered(t *testing.T) {
+	// An empty directory: no .git, go.mod, or package.json, so Inspect
+	// detects no technologies and Doctor runs zero checks (no real
+	// executable is ever invoked) and Environment finds no contract files.
+	dir := t.TempDir()
+
+	path := filepath.Join(t.TempDir(), "projects.json")
+	store := storage.New(path)
+	if err := store.Save([]project.Project{{Name: filepath.Base(dir), Path: dir}}); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	svc := NewService(store)
+	detail, err := svc.GetProjectDetail(dir)
+	if err != nil {
+		t.Fatalf("GetProjectDetail() error = %v", err)
+	}
+
+	if detail.Health != HealthHealthy {
+		t.Errorf("Health = %q, want %q", detail.Health, HealthHealthy)
+	}
+	if len(detail.DoctorChecks) != 0 {
+		t.Errorf("DoctorChecks = %v, want none", detail.DoctorChecks)
+	}
+	if detail.Environment.HasContract {
+		t.Error("Environment.HasContract = true, want false")
+	}
+	if detail.Environment.Error != "" {
+		t.Errorf("Environment.Error = %q, want empty", detail.Environment.Error)
+	}
+}
+
+func TestToProjectDetail_Unavailable(t *testing.T) {
+	pr := overview.ProjectResult{
+		Project: project.Project{Name: "gone", Path: "/tmp/gone"},
+		Health:  overview.HealthUnavailable,
+		Err:     errors.New("path does not exist"),
+	}
+
+	detail := toProjectDetail(pr)
+
+	if detail.Health != HealthUnavailable {
+		t.Errorf("Health = %q, want %q", detail.Health, HealthUnavailable)
+	}
+	if detail.UnavailableReason != "path does not exist" {
+		t.Errorf("UnavailableReason = %q, want %q", detail.UnavailableReason, "path does not exist")
+	}
+	if detail.Environment.HasContract || detail.Environment.Error != "" {
+		t.Errorf("Environment = %+v, want zero value (Environment must not be analyzed for an unavailable project)", detail.Environment)
+	}
+}
+
+func TestToProjectDetail_WithEnvironmentContract(t *testing.T) {
+	dir := t.TempDir()
+	writeFile := func(name, contents string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(contents), 0o644); err != nil {
+			t.Fatalf("WriteFile(%s) error = %v", name, err)
+		}
+	}
+	writeFile(".env.example", "FOO=\nBAZ=\n")
+	writeFile(".env.local", "FOO=1\n")
+
+	pr := overview.ProjectResult{
+		Project: project.Project{Name: "demo", Path: dir},
+		Health:  overview.HealthHealthy,
+		Report: doctor.Report{
+			Checks: []doctor.CheckResult{
+				{Tool: "git", Available: true, OK: true, Version: "2.40.0"},
+			},
+		},
+	}
+
+	detail := toProjectDetail(pr)
+
+	if detail.Environment.Error != "" {
+		t.Fatalf("Environment.Error = %q, want empty", detail.Environment.Error)
+	}
+	if !detail.Environment.HasContract {
+		t.Fatal("Environment.HasContract = false, want true")
+	}
+	if len(detail.Environment.ContractSources) != 1 || detail.Environment.ContractSources[0].VariableCount != 2 {
+		t.Errorf("ContractSources = %+v, want one source declaring 2 variables", detail.Environment.ContractSources)
+	}
+	if detail.Environment.MissingCount != 1 {
+		t.Errorf("MissingCount = %d, want 1 (only BAZ missing)", detail.Environment.MissingCount)
+	}
+	if len(detail.DoctorChecks) != 1 || detail.DoctorChecks[0].Tool != "git" || detail.DoctorChecks[0].Version != "2.40.0" {
+		t.Errorf("DoctorChecks = %+v, want the single git check", detail.DoctorChecks)
+	}
+}
+
+func TestToEnvironmentSummary_AnalysisError(t *testing.T) {
+	summary := toEnvironmentSummary(environment.Result{}, errors.New("boom"))
+
+	if summary.Error != "boom" {
+		t.Errorf("Error = %q, want %q", summary.Error, "boom")
+	}
+	if summary.HasContract || len(summary.Variables) != 0 {
+		t.Errorf("summary = %+v, want every other field left zero", summary)
+	}
+}
+
+func TestAddProject(t *testing.T) {
+	svc := newTestService(t)
+	projectDir := t.TempDir()
+
+	if err := svc.AddProject(projectDir); err != nil {
+		t.Fatalf("AddProject() error = %v", err)
+	}
+
+	overview, err := svc.GetOverview()
+	if err != nil {
+		t.Fatalf("GetOverview() error = %v", err)
+	}
+	if len(overview.Projects) != 1 {
+		t.Fatalf("Projects = %v, want the newly added project", overview.Projects)
+	}
+}
+
+func TestAddProject_Duplicate(t *testing.T) {
+	svc := newTestService(t)
+	projectDir := t.TempDir()
+
+	if err := svc.AddProject(projectDir); err != nil {
+		t.Fatalf("first AddProject() error = %v", err)
+	}
+	if err := svc.AddProject(projectDir); err == nil {
+		t.Fatal("second AddProject() error = nil, want an error for a duplicate path")
+	}
+}
+
+func TestAddProject_NonexistentPath(t *testing.T) {
+	svc := newTestService(t)
+
+	if err := svc.AddProject(filepath.Join(t.TempDir(), "missing")); err == nil {
+		t.Fatal("AddProject() error = nil, want an error for a nonexistent path")
 	}
 }

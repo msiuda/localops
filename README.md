@@ -167,44 +167,87 @@ stores any environment variable's value.
 LocalOps also ships as a native desktop app, built with
 [Wails v3](https://v3.wails.io/) (Go backend, React + TypeScript + Vite
 frontend). The CLI remains fully supported and unaffected. There is one
-shared registered-project registry (`internal/storage.DefaultPath()`); the
-CLI currently manages registration (`project add`/`project list`), and the
-desktop app reads that same registry — a project added via the CLI shows
-up in the desktop app. The desktop app does not yet register or remove
-projects itself.
+shared registered-project registry (`internal/storage.DefaultPath()`),
+and registration behaves identically from either entry point: both the
+CLI's `project add` and the desktop app's Add Project call the same
+`storage.Store.AddProject` operation, so a project added from either one
+shows up in the other.
 
 ### Current capability
 
-The desktop app currently implements a single screen: **Projects**, a
-dashboard of every registered project's health, backed by the real
-storage → project inspection → Doctor → Overview chain (the same one the
-CLI's `localops overview` uses). It shows each project's name, path,
-health (healthy / issues / unavailable), detected technologies, package
-manager, and a concise preview of failed Doctor checks, with loading,
-empty, and error states, and a manual refresh.
+The desktop app implements two screens:
 
-Doctor, Validation, Environment, and Settings exist in the sidebar as
-navigation placeholders only — they establish the app's information
-architecture but are not implemented yet. Project add/remove, a project
-detail view, and an in-app theme switch are not implemented in this
-milestone either.
+- **Projects** — a dashboard of every registered project's health, backed
+  by the real storage → project inspection → Doctor → Overview chain (the
+  same one the CLI's `localops overview` uses). Shows each project's name,
+  path, health (healthy / issues / unavailable), detected technologies,
+  package manager, and a concise preview of failed Doctor checks, with
+  loading, empty, and error states. **Add Project** opens the native OS
+  directory picker, registers the chosen folder (identical semantics to
+  CLI `project add`, including rejecting a duplicate), and reloads the
+  list — available from the header and from the empty state. Each row is
+  a real interactive control (native keyboard focus, Enter/Space to open)
+  — selecting one opens Project Detail. The sidebar's **Projects** entry
+  is enabled and returns to this list from anywhere in the app, including
+  from Project Detail.
+- **Project Detail** — opened from a Projects row, with a back action
+  returning to Projects. A selected project is identified by its
+  registered path, carried as a typed TanStack Router search parameter
+  (`/project?path=...&tab=...`) rather than a raw path URL segment.
+  Its header shows the project's name, path, health, detected
+  technologies, and package manager. Below that, four sections:
+  - **Overview** — a compact summary of stack, package manager, Doctor
+    issue count, and Environment contract/missing-variable status.
+  - **Doctor** — the full Doctor report (every check, not just failures):
+    tool, pass/fail, detected version, and failure detail.
+  - **Environment** — the existing Environment Contract analysis: contract
+    and local source files with variable counts, each declared variable's
+    satisfied/missing status and declaring/satisfying source, and parser
+    findings. Never renders a value.
+  - **Validation** — an informational placeholder. Validation is **not
+    runnable from the desktop app yet**: LocalOps can run a project's
+    tests/builds/lint/typecheck from the CLI (`localops validate <path>`),
+    and desktop execution — since Validation can run real project
+    commands — will be added later as its own deliberate, explicit
+    workflow. Opening Project Detail never runs anything beyond the
+    existing read-only Doctor/Environment checks.
+
+  Project Detail loads automatically when opened and has independent
+  loading/error/unavailable states, so an Environment analysis failure
+  never hides the project's Overview/Doctor information. There is no
+  manual refresh action in either screen; Projects reloads automatically
+  after Add Project succeeds.
+
+Doctor, Validation, and Environment (the global sidebar entries, distinct
+from Project Detail's own sections of the same name) and Settings remain
+disabled navigation placeholders — they establish the app's information
+architecture but are not implemented yet. Project remove and an in-app
+theme switch are not implemented in this milestone either.
 
 ### Architecture
 
 ```text
 cmd/desktop/            Wails v3 entry point (frameless window, service binding)
-  frontend/             React + TypeScript + Vite UI
-internal/desktop/       Thin Wails-facing service: adapts internal/storage
-                         and internal/overview for the frontend as small
-                         UI-facing DTOs. It does not duplicate storage,
-                         inspection, Doctor, Overview, Validation, or
-                         Environment logic.
+  frontend/             React + TypeScript + Vite UI (TanStack Router +
+                         Query, Tailwind v4 — see docs/frontend.md)
+internal/desktop/       Thin Wails-facing service: adapts internal/storage,
+                         internal/overview, and internal/environment for
+                         the frontend as small UI-facing DTOs, and wraps
+                         the native directory-picker dialog. It does not
+                         duplicate storage, inspection, Doctor, Overview,
+                         Validation, or Environment logic.
 ```
 
-The frontend never recomputes project health; it only renders what
-`internal/desktop.Service.GetOverview` (exposed to the frontend through
-Wails's generated TypeScript bindings — no HTTP/REST/JSON-RPC layer) already
-computed in Go.
+The frontend never recomputes project health or re-parses the Environment
+Contract; it only renders what `internal/desktop.Service`
+(`GetOverview`, `GetProjectDetail`, `AddProject`, `PickProjectDirectory`)
+— exposed to the frontend through Wails's generated TypeScript bindings,
+no HTTP/REST/JSON-RPC layer — already computed in Go. `GetProjectDetail`
+only ever operates on a path already present in the shared registry; it
+never inspects an arbitrary unregistered path. `AddProject` and the CLI's
+`project add` both call `storage.Store.AddProject`, the single shared
+registration operation (path resolution, duplicate detection, and
+persistence); neither entry point duplicates that logic itself.
 
 ### Developing the desktop app
 

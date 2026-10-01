@@ -38,19 +38,25 @@ func main() {
 	})
 
 	// Dark, neutral background matches the app's default (dark) theme and
-	// avoids a white flash before the frontend paints. Frameless removes
-	// the native title bar entirely; the default rounded-corner AppKit
-	// frame is preserved since Mac.CornerType is left at its default
-	// (MacWindowCornerTypeRounded) with no custom CornerRadius.
+	// avoids a white flash before the frontend paints. Frameless is left
+	// false: on macOS, Wails only applies Mac.TitleBar settings and only
+	// keeps the native traffic-light buttons enabled when Frameless is
+	// false (Frameless forces its own borderless/rounded-corner frame and
+	// explicitly hides all three title-bar buttons). MacTitleBarHidden
+	// gives the desired VS Code-style look instead: the title bar is
+	// hidden/transparent, content extends full-size behind it, and the
+	// standard native AppKit traffic lights remain at their normal inset.
 	app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:            "LocalOps",
 		Width:            1280,
 		Height:           820,
 		MinWidth:         1000,
 		MinHeight:        650,
-		Frameless:        true,
 		BackgroundColour: application.NewRGB(22, 23, 26),
-		URL:              "/",
+		Mac: application.MacWindow{
+			TitleBar: application.MacTitleBarHidden,
+		},
+		URL: "/",
 	})
 
 	if err := app.Run(); err != nil {
