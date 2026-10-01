@@ -26,6 +26,7 @@
   --color-danger-bg: var(--danger-bg);
   --color-warning: var(--warning);
   --color-warning-bg: var(--warning-bg);
+  --color-muted-bg: var(--muted-bg);
 
   --color-accent: var(--accent);
   --color-accent-bg: var(--accent-bg);
@@ -36,6 +37,14 @@
 
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
+
+  /* Named type scale (see tokens.css) — generates text-micro, text-body,
+     text-emphasis, text-title-sm, text-title utilities. */
+  --text-micro: var(--font-size-micro);
+  --text-body: var(--font-size-body);
+  --text-emphasis: var(--font-size-emphasis);
+  --text-title-sm: var(--font-size-title-sm);
+  --text-title: var(--font-size-title);
 }
 
 /*

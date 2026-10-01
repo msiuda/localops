@@ -17,6 +17,21 @@
     -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-mono: "SF Mono", ui-monospace, Menlo, Consolas, "Liberation Mono", monospace;
 
+  /*
+   * Named typography scale. Every component should reach for one of these
+   * roles instead of an arbitrary text-[..px] literal:
+   *  - micro:     section labels, counts, auxiliary mono metadata
+   *  - body:      normal labels, secondary UI text, descriptions
+   *  - emphasis:  row/identity text (project names, tool names, nav labels)
+   *  - title-sm:  Project Detail's project title
+   *  - title:     Projects page title
+   */
+  --font-size-micro: 11px;
+  --font-size-body: 12.5px;
+  --font-size-emphasis: 13px;
+  --font-size-title-sm: 15px;
+  --font-size-title: 19px;
+
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
@@ -48,6 +63,10 @@
   --danger-bg: rgba(240, 101, 95, 0.14);
   --warning: #f5a623;
   --warning-bg: rgba(245, 166, 35, 0.14);
+  /* Semantic fill for a neutral/muted status (e.g. "unavailable"). Currently
+     the same value as --border-strong, but declared as its own token so a
+     background role never silently borrows a border role. */
+  --muted-bg: rgba(255, 255, 255, 0.14);
 
   /* Accent */
   --accent: #5b8def;
@@ -75,6 +94,7 @@
     --danger-bg: rgba(209, 67, 60, 0.1);
     --warning: #b8720a;
     --warning-bg: rgba(184, 114, 10, 0.1);
+    --muted-bg: rgba(15, 17, 21, 0.14);
 
     --accent: #3b6fe0;
     --accent-bg: rgba(59, 111, 224, 0.12);

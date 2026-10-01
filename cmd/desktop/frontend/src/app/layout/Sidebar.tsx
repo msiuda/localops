@@ -16,7 +16,7 @@ const DISABLED_NAV_ITEMS: NavItemConfig[] = [
 ];
 
 const navItemClasses =
-  "flex w-full items-center gap-2.5 rounded-sm px-2 py-1.5 text-[12.5px] font-medium text-text-secondary";
+  "flex w-full items-center gap-2.5 rounded-sm px-2 py-1.5 text-emphasis font-medium text-text-secondary";
 
 /**
  * The application sidebar: window controls, wordmark, primary navigation,
@@ -42,7 +42,7 @@ export function Sidebar() {
           <span className="bg-accent flex h-5.5 w-5.5 items-center justify-center rounded-md text-white">
             <LocalOpsMark size={13} />
           </span>
-          <span className="text-text-primary text-[13px] font-semibold tracking-[0.01em]">LocalOps</span>
+          <span className="text-text-primary text-emphasis font-semibold tracking-[0.01em]">LocalOps</span>
         </div>
       </div>
 
@@ -63,7 +63,7 @@ export function Sidebar() {
           <button
             key={item.key}
             type="button"
-            className={cn(navItemClasses, "opacity-45")}
+            className={cn(navItemClasses, "cursor-default opacity-[0.58]")}
             disabled
             title="Coming soon"
           >
@@ -74,7 +74,12 @@ export function Sidebar() {
       </nav>
 
       <div className="border-border mt-auto border-t p-2.5">
-        <button type="button" className={cn(navItemClasses, "opacity-45")} disabled title="Coming soon">
+        <button
+          type="button"
+          className={cn(navItemClasses, "cursor-default opacity-[0.58]")}
+          disabled
+          title="Coming soon"
+        >
           <Settings size={16} strokeWidth={2} />
           <span>Settings</span>
         </button>

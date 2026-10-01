@@ -7,7 +7,7 @@ const TONE_CLASSES: Record<StatusTone, string> = {
   success: "text-success bg-success-bg",
   warning: "text-warning bg-warning-bg",
   danger: "text-danger bg-danger-bg",
-  muted: "text-text-muted bg-border-strong",
+  muted: "text-text-muted bg-muted-bg",
 };
 
 interface StatusBadgeProps {
@@ -22,7 +22,7 @@ export function StatusBadge({ label, tone, icon: Icon, className }: StatusBadgeP
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-[5px] rounded-full px-2 py-0.5 text-[11px] font-semibold tracking-[0.01em] whitespace-nowrap",
+        "text-micro inline-flex items-center gap-[5px] rounded-full px-2 py-0.5 font-semibold tracking-[0.01em] whitespace-nowrap",
         TONE_CLASSES[tone],
         className,
       )}

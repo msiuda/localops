@@ -26,7 +26,7 @@ export function Button({ variant = "secondary", className, type = "button", ...p
         // Cursor (pointer when enabled, default when disabled) comes from
         // the base-layer `button` rules in app/styles/index.css — no need
         // to repeat it here as a utility.
-        "inline-flex items-center gap-1.5 rounded-sm px-3 py-1.5 text-xs font-semibold",
+        "text-body inline-flex items-center gap-1.5 rounded-sm px-3 py-1.5 font-semibold",
         "disabled:opacity-60",
         "focus-visible:outline-accent focus-visible:outline-2 focus-visible:outline-offset-1",
         VARIANT_CLASSES[variant],

@@ -18,14 +18,14 @@ export function AddProjectButton({ className }: AddProjectButtonProps) {
       </Button>
 
       {mutation.isError && (
-        <div className="border-danger-bg bg-danger-bg text-danger flex items-center gap-3 rounded-sm border px-3.5 py-2 text-xs">
+        <div className="border-danger-bg bg-danger-bg text-danger text-body flex items-center gap-3 rounded-sm border px-3.5 py-2">
           <span>
             Couldn't add project:{" "}
             {mutation.error instanceof Error ? mutation.error.message : String(mutation.error)}
           </span>
           <button
             type="button"
-            className="text-danger flex-shrink-0 text-[11.5px] font-semibold underline"
+            className="text-danger text-micro flex-shrink-0 font-semibold underline"
             onClick={() => mutation.reset()}
           >
             Dismiss

@@ -6,10 +6,10 @@ interface OverviewSectionProps {
   detail: ProjectDetail;
 }
 
-const group = "flex flex-col gap-2.5 rounded-md border border-border bg-surface p-3.5";
+const group = "flex flex-col gap-2 rounded-md border border-border bg-surface p-3";
 const row = "flex items-center justify-between gap-4";
-const label = "text-[12.5px] text-text-secondary";
-const value = "text-[12.5px] font-semibold text-text-primary";
+const label = "text-body text-text-secondary";
+const value = "text-body font-semibold text-text-primary";
 
 /**
  * A compact "understand this project's local health in a few seconds"
@@ -32,7 +32,7 @@ export function OverviewSection({ detail }: OverviewSectionProps) {
               ))}
             </div>
           ) : (
-            <span className="text-text-muted text-xs">None detected</span>
+            <span className="text-text-muted text-micro">None detected</span>
           )}
         </div>
         <div className={row}>
@@ -56,7 +56,7 @@ export function OverviewSection({ detail }: OverviewSectionProps) {
       <section className={group}>
         <SectionHeader>Environment</SectionHeader>
         {env.error ? (
-          <p className="text-text-muted m-0 text-xs">Environment analysis failed: {env.error}</p>
+          <p className="text-text-muted text-micro m-0">Environment analysis failed: {env.error}</p>
         ) : env.hasContract ? (
           <>
             <div className={row}>
@@ -73,7 +73,7 @@ export function OverviewSection({ detail }: OverviewSectionProps) {
             </div>
           </>
         ) : (
-          <p className="text-text-muted m-0 text-xs">No Environment Contract declared.</p>
+          <p className="text-text-muted text-micro m-0">No Environment Contract declared.</p>
         )}
       </section>
     </div>

@@ -16,7 +16,7 @@ interface DoctorSectionProps {
  */
 export function DoctorSection({ checks }: DoctorSectionProps) {
   if (checks.length === 0) {
-    return <p className="text-text-muted m-0 text-xs">No Doctor checks apply to this project.</p>;
+    return <p className="text-text-muted text-micro m-0">No Doctor checks apply to this project.</p>;
   }
 
   return (
@@ -29,21 +29,21 @@ export function DoctorSection({ checks }: DoctorSectionProps) {
           }`}
         >
           <div className="flex min-w-0 items-center gap-2.5">
-            <MonoText className="text-text-primary text-[12.5px] font-semibold">{check.tool}</MonoText>
+            <MonoText className="text-text-primary text-emphasis font-semibold">{check.tool}</MonoText>
             <span
-              className={`flex-shrink-0 text-[10.5px] font-bold tracking-[0.02em] uppercase ${
+              className={`text-micro flex-shrink-0 font-bold tracking-[0.02em] uppercase ${
                 check.ok ? "text-success" : "text-danger"
               }`}
             >
               {check.ok ? "Passed" : check.available ? "Failed" : "Not found"}
             </span>
           </div>
-          <span className="text-text-secondary truncate text-xs">{check.note}</span>
-          <MonoText className="text-text-muted text-right text-[11.5px] whitespace-nowrap">
+          <span className="text-text-secondary text-body truncate">{check.note}</span>
+          <MonoText className="text-text-muted text-micro text-right whitespace-nowrap">
             {check.version}
           </MonoText>
           {!check.ok && check.detail ? (
-            <span className="text-danger col-span-full pt-1 text-[11.5px]">{check.detail}</span>
+            <span className="text-danger text-micro col-span-full pt-1">{check.detail}</span>
           ) : null}
         </div>
       ))}

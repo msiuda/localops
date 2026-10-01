@@ -18,15 +18,15 @@ export function ValidationSection() {
         aria-hidden="true"
       />
       <div className="flex flex-col gap-1.5">
-        <p className="text-text-primary m-0 text-[12.5px] font-semibold">
+        <p className="text-text-primary text-body m-0 font-semibold">
           Validation isn't runnable from the desktop yet
         </p>
-        <p className="text-text-muted m-0 text-xs leading-relaxed">
+        <p className="text-text-muted text-body m-0 leading-relaxed">
           LocalOps can run project tests, builds, linting, and related checks from the CLI. Desktop execution
           will be added as its own dedicated, deliberate workflow — nothing runs merely by opening this
           project.
         </p>
-        <code className="border-border bg-bg text-text-secondary mt-0.5 w-fit rounded-sm border px-2 py-0.5 font-mono text-[11px]">
+        <code className="border-border bg-bg text-text-secondary text-micro mt-0.5 w-fit rounded-sm border px-2 py-0.5 font-mono">
           localops validate &lt;path&gt;
         </code>
       </div>

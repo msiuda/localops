@@ -20,11 +20,11 @@ export function ProjectDetailPage() {
 
   return (
     <div className="flex h-full min-w-0 flex-col">
-      <header className="drag-region border-border flex items-start gap-5 border-b px-7 pt-4.5 pb-4">
+      <header className="drag-region border-border flex items-start gap-5 border-b px-7 pt-5 pb-4">
         <Link
           to="/"
           aria-label="Back to Projects"
-          className="no-drag text-text-secondary hover:bg-surface-hover hover:text-text-primary focus-visible:outline-accent flex flex-shrink-0 cursor-pointer items-center gap-1.5 rounded-sm py-1.5 pr-2.5 pl-1.5 text-[12.5px] font-semibold focus-visible:outline-2 focus-visible:outline-offset-1"
+          className="no-drag text-text-secondary hover:bg-surface-hover hover:text-text-primary focus-visible:outline-accent text-emphasis flex flex-shrink-0 cursor-pointer items-center gap-1.5 rounded-sm py-1.5 pr-2.5 pl-1.5 font-semibold focus-visible:outline-2 focus-visible:outline-offset-1"
         >
           <ArrowLeft size={16} strokeWidth={2.2} />
           Projects
@@ -33,10 +33,10 @@ export function ProjectDetailPage() {
         {detail && (
           <div className="flex min-w-0 flex-1 flex-col gap-1.5">
             <div className="flex items-center gap-2.5">
-              <h1 className="text-text-primary m-0 text-[17px] font-bold tracking-tight">{detail.name}</h1>
+              <h1 className="text-text-primary text-title-sm m-0 font-bold tracking-tight">{detail.name}</h1>
               <HealthBadge health={detail.health} />
             </div>
-            <MonoText className="text-text-muted truncate text-[11.5px]" title={detail.path}>
+            <MonoText className="text-text-muted text-micro truncate" title={detail.path}>
               {formatProjectPath(detail.path)}
             </MonoText>
             {!isUnavailable && (
@@ -51,16 +51,16 @@ export function ProjectDetailPage() {
         )}
       </header>
 
-      {isPending && <div className="text-text-muted px-7 py-7 text-[12.5px]">Loading…</div>}
+      {isPending && <div className="text-text-muted text-body px-7 py-7">Loading…</div>}
 
       {isError && (
-        <div className="text-danger px-7 py-7 text-[12.5px]">
+        <div className="text-danger text-body px-7 py-7">
           Couldn't load this project: {error instanceof Error ? error.message : String(error)}
         </div>
       )}
 
       {detail && isUnavailable && (
-        <div className="text-text-muted px-7 py-7 text-[12.5px]">
+        <div className="text-text-muted text-body px-7 py-7">
           {detail.unavailableReason || "Project path is unavailable"}
         </div>
       )}
@@ -78,7 +78,7 @@ export function ProjectDetailPage() {
                 type="button"
                 role="tab"
                 aria-selected={tab === key}
-                className={`hover:text-text-primary focus-visible:outline-accent relative py-2.5 text-[12.5px] font-semibold after:absolute after:right-0 after:-bottom-px after:left-0 after:h-0.5 after:rounded-sm after:content-[''] focus-visible:outline-2 focus-visible:outline-offset-2 ${
+                className={`hover:bg-surface-hover hover:text-text-primary focus-visible:outline-accent text-emphasis relative -mx-1.5 rounded-t-sm px-1.5 py-2.5 font-semibold after:absolute after:right-1.5 after:-bottom-px after:left-1.5 after:h-0.5 after:rounded-sm after:content-[''] focus-visible:outline-2 focus-visible:outline-offset-2 ${
                   tab === key ? "text-text-primary after:bg-accent" : "text-text-muted after:bg-transparent"
                 }`}
                 onClick={() => navigate({ search: (prev) => ({ ...prev, tab: key }) })}

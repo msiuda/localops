@@ -31,16 +31,16 @@ export function ProjectRow({ project }: ProjectRowProps) {
     >
       <div className="flex min-w-0 flex-col gap-1">
         <div className="flex items-center gap-2.5">
-          <span className="text-text-primary truncate text-[13px] font-semibold">{project.name}</span>
+          <span className="text-text-primary text-emphasis truncate font-semibold">{project.name}</span>
           <HealthBadge health={project.health} />
         </div>
-        <MonoText className="text-text-muted truncate text-[11.5px]" title={project.path}>
+        <MonoText className="text-text-muted text-micro truncate" title={project.path}>
           {formatProjectPath(project.path)}
         </MonoText>
       </div>
 
       {isUnavailable ? (
-        <span className="text-text-muted col-span-2 truncate text-[11.5px]">
+        <span className="text-text-muted text-micro col-span-2 truncate">
           {project.unavailableReason || "Project path is unavailable"}
         </span>
       ) : (
@@ -55,17 +55,17 @@ export function ProjectRow({ project }: ProjectRowProps) {
           <div className="flex min-w-0 flex-col items-end gap-0.5">
             {project.issueCount > 0 ? (
               <>
-                <span className="text-warning text-xs font-semibold whitespace-nowrap">
+                <span className="text-warning text-micro font-semibold whitespace-nowrap">
                   {project.issueCount} issue{project.issueCount === 1 ? "" : "s"}
                 </span>
                 {previewFinding ? (
-                  <span className="text-text-muted max-w-full truncate text-[11px]">
+                  <span className="text-text-muted text-micro max-w-full truncate">
                     {previewFinding.tool} — {previewFinding.detail}
                   </span>
                 ) : null}
               </>
             ) : (
-              <span className="text-text-muted text-xs whitespace-nowrap">No issues</span>
+              <span className="text-text-muted text-micro whitespace-nowrap">No issues</span>
             )}
           </div>
         </>

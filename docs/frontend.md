@@ -145,3 +145,49 @@ Configured once, in `tsconfig.json`'s `paths`; Vite and Vitest both resolve
 them via Vite 8's native `resolve.tsconfigPaths` (no `vite-tsconfig-paths`
 dependency needed). Never write a deep `../../../` relative import when `@/`
 reaches the same file.
+
+## Visual system
+
+LocalOps's visual language is deliberately restrained: a native-feeling,
+information-dense desktop tool, not a marketing surface. These conventions
+exist so new UI reads as part of the same system rather than a one-off.
+
+- **Typography scale** — five named roles, declared once in
+  `app/styles/tokens.css` (`--font-size-*`) and mapped to Tailwind utilities
+  in `app/styles/index.css`'s `@theme` block: `text-micro` (11px — section
+  labels, counts, auxiliary mono metadata), `text-body` (12.5px — normal
+  labels, secondary text, descriptions), `text-emphasis` (13px — row/identity
+  text: project names, tool names, nav labels, tabs), `text-title-sm` (15px —
+  Project Detail's project title), `text-title` (19px — the Projects page
+  title). Reach for the role that matches the text's job, not the pixel
+  value closest to what you'd otherwise guess. Do not add a new arbitrary
+  `text-[..px]` literal; if none of the five roles fit, that's a sign the
+  content needs a different treatment, not a sixth size.
+- **Color tokens are semantic, not decorative.** `--bg`/`--surface`/
+  `--surface-hover` are surfaces; `--border`/`--border-strong` are borders;
+  `--text-primary`/`--secondary`/`--muted` are text; `--success`/`--warning`/
+  `--danger`/`--muted-bg` are status fills. A background never borrows a
+  border token (or vice versa) merely because the color happens to match.
+- **One accent color.** `--accent` is the only accent in the app (active
+  nav, focus rings, the active tab's underline). Do not introduce a second
+  accent hue for a new feature; reuse the existing semantic status colors
+  (`success`/`warning`/`danger`) for state, and the one accent for
+  selection/focus.
+- **Radius** — three tokens, each with a fixed role: `radius-sm` (badges,
+  small controls, code chips), `radius-md` (rows, panels, tables, empty
+  states — the default for any bounded container), `radius-lg` (reserved for
+  a genuinely larger top-level container, not used by default). When in
+  doubt, a new container uses `radius-md`.
+- **Density** — the app runs dense and quiet: tight row padding, a 12.5-13px
+  working size for most content, borders (not shadows or card elevation) as
+  the default way to separate items. Reach for a bordered row/line before
+  reaching for a padded card; a "card" treatment is justified only when it
+  communicates real elevation (e.g. a grouped stat panel), not as a default
+  wrapper.
+- **Monospace** (`MonoText`, `--font-mono`) is reserved for paths, tool
+  names, versions, and variable names — never for ordinary prose.
+- **Interaction philosophy** — this is a tool used dozens of times a day,
+  not a page visited once. Motion stays limited to near-instant color/
+  background transitions (`transition-colors duration-100`) and a loading
+  skeleton; there is no scroll-driven animation, parallax, or decorative
+  motion anywhere in the app, and new UI should not introduce any.

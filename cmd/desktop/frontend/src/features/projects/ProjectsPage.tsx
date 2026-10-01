@@ -9,10 +9,10 @@ export function ProjectsPage() {
 
   return (
     <div className="flex h-full min-w-0 flex-col">
-      <header className="drag-region flex items-start justify-between px-7 pt-5.5 pb-4.5">
+      <header className="drag-region flex items-start justify-between px-7 pt-5 pb-4">
         <div>
-          <h1 className="text-text-primary m-0 text-xl font-bold tracking-tight">Projects</h1>
-          <p className="text-text-muted mt-1 mb-0 text-[12.5px]">Your local development workspace</p>
+          <h1 className="text-text-primary text-title m-0 font-bold tracking-tight">Projects</h1>
+          <p className="text-text-muted text-body mt-1 mb-0">Your local development workspace</p>
         </div>
         <AddProjectButton className="no-drag" />
       </header>

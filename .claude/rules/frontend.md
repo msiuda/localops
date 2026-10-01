@@ -39,3 +39,19 @@ enforceable checklist.
   `docs/frontend.md` and ask before installing anything system/global.
 - Leaving a milestone with a known UX/UI inconsistency, dead code, or a
   duplicated implementation "to polish later."
+
+## Visual system (see `docs/frontend.md` for the full rationale)
+
+- Use the named typography utilities (`text-micro`, `text-body`,
+  `text-emphasis`, `text-title-sm`, `text-title`) instead of an arbitrary
+  `text-[..px]` literal or an unrelated default Tailwind size.
+- Keep token roles semantic: background tokens for backgrounds, border
+  tokens for borders, status tokens for status. Don't repurpose one role's
+  token for another's job.
+- Don't introduce a second accent color. Reuse the existing accent and the
+  existing status colors (`success`/`warning`/`danger`).
+- Use the existing radius convention (`radius-sm` for small controls,
+  `radius-md` for rows/panels/tables/containers) and the existing density —
+  don't invent a new padding/gap scale for a new component.
+- Avoid decorative card proliferation: prefer a bordered row/line over
+  wrapping something in a padded card by default.

@@ -19,12 +19,12 @@ const sourceRow =
  */
 export function EnvironmentSection({ environment }: EnvironmentSectionProps) {
   if (environment.error) {
-    return <p className="text-danger m-0 text-xs">Environment analysis failed: {environment.error}</p>;
+    return <p className="text-danger text-micro m-0">Environment analysis failed: {environment.error}</p>;
   }
 
   if (!environment.hasContract) {
     return (
-      <p className="text-text-muted m-0 text-xs">
+      <p className="text-text-muted text-micro m-0">
         No Environment Contract declared (.env.example, .env.sample, or .env.template).
       </p>
     );
@@ -37,8 +37,8 @@ export function EnvironmentSection({ environment }: EnvironmentSectionProps) {
         <div className={sourceContainer}>
           {environment.contractSources?.map((source) => (
             <div key={source.file} className={sourceRow}>
-              <MonoText className="text-text-primary text-xs">{source.file}</MonoText>
-              <span className="text-text-muted flex-shrink-0 text-[11.5px]">
+              <MonoText className="text-text-primary text-emphasis">{source.file}</MonoText>
+              <span className="text-text-muted text-micro flex-shrink-0">
                 {source.variableCount} variable{source.variableCount === 1 ? "" : "s"}
               </span>
             </div>
@@ -52,8 +52,8 @@ export function EnvironmentSection({ environment }: EnvironmentSectionProps) {
           <div className={sourceContainer}>
             {environment.localSources.map((source) => (
               <div key={source.file} className={sourceRow}>
-                <MonoText className="text-text-primary text-xs">{source.file}</MonoText>
-                <span className="text-text-muted flex-shrink-0 text-[11.5px]">
+                <MonoText className="text-text-primary text-emphasis">{source.file}</MonoText>
+                <span className="text-text-muted text-micro flex-shrink-0">
                   {source.variableCount} variable{source.variableCount === 1 ? "" : "s"}
                 </span>
               </div>
@@ -75,10 +75,13 @@ export function EnvironmentSection({ environment }: EnvironmentSectionProps) {
                 index < (environment.variables?.length ?? 0) - 1 ? "[&>*]:border-border [&>*]:border-b" : ""
               }`}
             >
-              <MonoText className="text-text-primary truncate text-xs font-semibold" title={variable.name}>
+              <MonoText
+                className="text-text-primary text-emphasis truncate font-semibold"
+                title={variable.name}
+              >
                 {variable.name}
               </MonoText>
-              <span className="text-[11.5px] font-semibold whitespace-nowrap">
+              <span className="text-micro font-semibold whitespace-nowrap">
                 {variable.satisfied ? (
                   <>
                     <span className="text-success">Satisfied</span>
@@ -88,7 +91,7 @@ export function EnvironmentSection({ environment }: EnvironmentSectionProps) {
                   <span className="text-warning">Missing</span>
                 )}
               </span>
-              <span className="text-text-muted truncate text-[11px]">{variable.declaredIn?.join(", ")}</span>
+              <span className="text-text-muted text-micro truncate">{variable.declaredIn?.join(", ")}</span>
             </div>
           ))}
         </div>
@@ -100,11 +103,11 @@ export function EnvironmentSection({ environment }: EnvironmentSectionProps) {
           <div className={sourceContainer}>
             {environment.findings.map((finding, index) => (
               <div key={index} className={sourceRow}>
-                <MonoText className="text-text-muted flex-shrink-0 text-[11.5px]">
+                <MonoText className="text-text-muted text-micro flex-shrink-0">
                   {finding.source}
                   {finding.line > 0 ? `:${finding.line}` : ""}
                 </MonoText>
-                <span className="text-text-secondary text-right text-xs">{finding.detail}</span>
+                <span className="text-text-secondary text-body">{finding.detail}</span>
               </div>
             ))}
           </div>
