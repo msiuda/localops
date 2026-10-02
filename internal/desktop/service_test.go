@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/msiuda/localops/internal/doctor"
@@ -11,6 +12,7 @@ import (
 	"github.com/msiuda/localops/internal/overview"
 	"github.com/msiuda/localops/internal/project"
 	"github.com/msiuda/localops/internal/storage"
+	"github.com/msiuda/localops/internal/technology"
 )
 
 func newTestService(t *testing.T) *Service {
@@ -90,6 +92,12 @@ func TestToProjectCard_Healthy(t *testing.T) {
 			IsGitRepository: true,
 			HasGoMod:        true,
 			IsNodeProject:   true,
+			Technologies: technology.Result{
+				Detected: []technology.Detected{
+					{ID: technology.IDGo, Name: "Go", Kind: technology.KindLanguage},
+					{ID: technology.IDNodeJS, Name: "Node.js", Kind: technology.KindRuntime},
+				},
+			},
 		},
 		Report: doctor.Report{
 			Path: "/tmp/demo",
@@ -109,7 +117,9 @@ func TestToProjectCard_Healthy(t *testing.T) {
 	if card.Health != HealthHealthy {
 		t.Errorf("Health = %q, want %q", card.Health, HealthHealthy)
 	}
-	wantTechs := []string{"Git", "Go", "Node.js"}
+	// Git is deliberately excluded from the compact technology summary; it
+	// is repository metadata, not a Technology Intelligence fact.
+	wantTechs := []string{"Go", "Node.js"}
 	if len(card.Technologies) != len(wantTechs) {
 		t.Fatalf("Technologies = %v, want %v", card.Technologies, wantTechs)
 	}
@@ -272,6 +282,254 @@ func TestToProjectDetail_WithEnvironmentContract(t *testing.T) {
 	}
 	if len(detail.DoctorChecks) != 1 || detail.DoctorChecks[0].Tool != "git" || detail.DoctorChecks[0].Version != "2.40.0" {
 		t.Errorf("DoctorChecks = %+v, want the single git check", detail.DoctorChecks)
+	}
+}
+
+func TestCompactTechnologySummary_PriorityOrderAndCap(t *testing.T) {
+	insp := project.Inspection{
+		IsGitRepository: true,
+		Technologies: technology.Result{
+			Detected: []technology.Detected{
+				{ID: technology.IDTypeScript, Name: "TypeScript", Kind: technology.KindLanguage},
+				{ID: technology.IDNodeJS, Name: "Node.js", Kind: technology.KindRuntime},
+				{ID: technology.IDAngular, Name: "Angular", Kind: technology.KindFramework},
+				{ID: technology.IDVue, Name: "Vue", Kind: technology.KindFramework},
+			},
+		},
+	}
+
+	names, more := compactTechnologySummary(insp)
+
+	if len(names) != maxCompactTechnologies {
+		t.Fatalf("names = %v, want exactly %d (the cap)", names, maxCompactTechnologies)
+	}
+	// Priority: language, then framework(s), then runtime/platform — not
+	// Git (repository metadata, never part of this summary), and not the
+	// detector's own language-first/alphabetical Detect() order.
+	want := []string{"TypeScript", "Angular", "Vue"}
+	if !reflect.DeepEqual(names, want) {
+		t.Errorf("names = %v, want %v", names, want)
+	}
+	if !reflect.DeepEqual(more, []string{"Node.js"}) {
+		t.Errorf("more = %v, want [Node.js] (bumped past the cap)", more)
+	}
+}
+
+func TestCompactTechnologySummary_NextJSPreferredOverReact(t *testing.T) {
+	insp := project.Inspection{
+		Technologies: technology.Result{
+			Detected: []technology.Detected{
+				{ID: technology.IDTypeScript, Name: "TypeScript", Kind: technology.KindLanguage},
+				{ID: technology.IDNodeJS, Name: "Node.js", Kind: technology.KindRuntime},
+				{ID: technology.IDReact, Name: "React", Kind: technology.KindFramework},
+				{ID: technology.IDNextJS, Name: "Next.js", Kind: technology.KindFramework},
+			},
+		},
+	}
+
+	names, more := compactTechnologySummary(insp)
+
+	want := []string{"TypeScript", "Next.js", "Node.js"}
+	if !reflect.DeepEqual(names, want) {
+		t.Errorf("names = %v, want %v: Next.js is more characteristic than the React it is built on", names, want)
+	}
+	if len(more) != 0 {
+		t.Errorf("more = %v, want none: React was suppressed by precedence, not bumped by the cap", more)
+	}
+}
+
+func TestCompactTechnologySummary_NestJSPreferredOverExpress(t *testing.T) {
+	insp := project.Inspection{
+		Technologies: technology.Result{
+			Detected: []technology.Detected{
+				{ID: technology.IDTypeScript, Name: "TypeScript", Kind: technology.KindLanguage},
+				{ID: technology.IDNodeJS, Name: "Node.js", Kind: technology.KindRuntime},
+				{ID: technology.IDExpress, Name: "Express", Kind: technology.KindFramework},
+				{ID: technology.IDNestJS, Name: "NestJS", Kind: technology.KindFramework},
+			},
+		},
+	}
+
+	names, _ := compactTechnologySummary(insp)
+
+	want := []string{"TypeScript", "NestJS", "Node.js"}
+	if !reflect.DeepEqual(names, want) {
+		t.Errorf("names = %v, want %v: NestJS is more characteristic than the Express it wraps", names, want)
+	}
+}
+
+func TestCompactTechnologySummary_PrecedenceDoesNotAffectFullDetectionOrGroups(t *testing.T) {
+	insp := project.Inspection{
+		Technologies: technology.Result{
+			Detected: []technology.Detected{
+				{ID: technology.IDTypeScript, Name: "TypeScript", Kind: technology.KindLanguage},
+				{ID: technology.IDNextJS, Name: "Next.js", Kind: technology.KindFramework},
+				{ID: technology.IDReact, Name: "React", Kind: technology.KindFramework},
+			},
+		},
+	}
+
+	// The compact summary filters React out in favor of Next.js...
+	names, _ := compactTechnologySummary(insp)
+	for _, n := range names {
+		if n == "React" {
+			t.Errorf("names = %v, want React suppressed in the compact summary", names)
+		}
+	}
+
+	// ...but the full detection result and the grouped Overview picture
+	// are untouched: both frameworks remain.
+	if len(insp.Technologies.Detected) != 3 {
+		t.Errorf("Technologies.Detected = %+v, want all 3 technologies still present", insp.Technologies.Detected)
+	}
+	groups := technologyGroups(insp)
+	var frameworkNames []string
+	for _, g := range groups {
+		if g.Label == "Frameworks" {
+			frameworkNames = g.Names
+		}
+	}
+	want := []string{"Next.js", "React"}
+	if !reflect.DeepEqual(frameworkNames, want) {
+		t.Errorf("Frameworks group = %v, want %v (both still shown in the full picture)", frameworkNames, want)
+	}
+}
+
+func TestCompactTechnologySummary_NoOverflowWhenWithinCap(t *testing.T) {
+	insp := project.Inspection{
+		Technologies: technology.Result{
+			Detected: []technology.Detected{
+				{ID: technology.IDGo, Name: "Go", Kind: technology.KindLanguage},
+			},
+		},
+	}
+
+	names, more := compactTechnologySummary(insp)
+
+	if !reflect.DeepEqual(names, []string{"Go"}) {
+		t.Errorf("names = %v, want [Go]", names)
+	}
+	if len(more) != 0 {
+		t.Errorf("more = %v, want none", more)
+	}
+}
+
+func TestCompactTechnologySummary_FrameworkIncludedWhenStronglyDetected(t *testing.T) {
+	insp := project.Inspection{
+		Technologies: technology.Result{
+			Detected: []technology.Detected{
+				{ID: technology.IDPHP, Name: "PHP", Kind: technology.KindLanguage},
+				{ID: technology.IDLaravel, Name: "Laravel", Kind: technology.KindFramework},
+			},
+		},
+	}
+
+	names, _ := compactTechnologySummary(insp)
+
+	if !reflect.DeepEqual(names, []string{"PHP", "Laravel"}) {
+		t.Errorf("names = %v, want [PHP Laravel]", names)
+	}
+}
+
+func TestTechnologyGroups_GroupedByKindOmittingEmpty(t *testing.T) {
+	insp := project.Inspection{
+		Technologies: technology.Result{
+			Detected: []technology.Detected{
+				{ID: technology.IDTypeScript, Name: "TypeScript", Kind: technology.KindLanguage},
+				{ID: technology.IDNodeJS, Name: "Node.js", Kind: technology.KindRuntime},
+				{ID: technology.IDNestJS, Name: "NestJS", Kind: technology.KindFramework},
+			},
+		},
+	}
+
+	groups := technologyGroups(insp)
+
+	if len(groups) != 3 {
+		t.Fatalf("groups = %+v, want 3 (no Platform group since nothing detected there)", groups)
+	}
+	if groups[0].Label != "Languages" || groups[0].Names[0] != "TypeScript" {
+		t.Errorf("groups[0] = %+v, want Languages: [TypeScript]", groups[0])
+	}
+	if groups[2].Label != "Frameworks" || groups[2].Names[0] != "NestJS" {
+		t.Errorf("groups[2] = %+v, want Frameworks: [NestJS]", groups[2])
+	}
+}
+
+func TestToProjectDetail_EnvironmentSourceUsage(t *testing.T) {
+	dir := t.TempDir()
+	writeFile := func(name, contents string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(contents), 0o644); err != nil {
+			t.Fatalf("WriteFile(%s) error = %v", name, err)
+		}
+	}
+	writeFile(".env.example", "DATABASE_URL=\n")
+	writeFile("db.ts", "export const url = process.env.DATABASE_URL;\nconst key = process.env.STRIPE_SECRET_KEY;\n")
+
+	pr := overview.ProjectResult{
+		Project: project.Project{Name: "demo", Path: dir},
+		Health:  overview.HealthHealthy,
+	}
+
+	detail := toProjectDetail(pr)
+
+	if detail.Environment.MissingCount != 1 {
+		t.Errorf("MissingCount = %d, want 1 (DATABASE_URL declared but not locally satisfied)", detail.Environment.MissingCount)
+	}
+	if detail.Environment.UndeclaredCount != 1 {
+		t.Errorf("UndeclaredCount = %d, want 1 (STRIPE_SECRET_KEY)", detail.Environment.UndeclaredCount)
+	}
+}
+
+func TestToEnvironmentSummary_UsedDeclaredAndUndeclared(t *testing.T) {
+	res := environment.Result{
+		Path: "/projects/demo",
+		Variables: []environment.VariableStatus{
+			{
+				Name:       "DATABASE_URL",
+				Declared:   true,
+				DeclaredIn: []string{".env.example"},
+				Used:       true,
+				UsedIn:     []environment.Usage{{File: "src/db.ts", Line: 14}},
+				Satisfied:  true,
+				Source:     ".env",
+			},
+			{
+				Name:       "JWT_SECRET",
+				Declared:   true,
+				DeclaredIn: []string{".env.example"},
+				Used:       false,
+				Satisfied:  true,
+				Source:     ".env",
+			},
+			{
+				Name:   "STRIPE_SECRET_KEY",
+				Used:   true,
+				UsedIn: []environment.Usage{{File: "src/payments.ts", Line: 21}},
+			},
+		},
+	}
+
+	summary := toEnvironmentSummary(res, nil)
+
+	if summary.MissingCount != 0 {
+		t.Errorf("MissingCount = %d, want 0: an undeclared usage must never count as a missing declared variable", summary.MissingCount)
+	}
+	if summary.UndeclaredCount != 1 {
+		t.Errorf("UndeclaredCount = %d, want 1", summary.UndeclaredCount)
+	}
+
+	var stripe EnvVariable
+	for _, v := range summary.Variables {
+		if v.Name == "STRIPE_SECRET_KEY" {
+			stripe = v
+		}
+	}
+	if stripe.Declared {
+		t.Error("STRIPE_SECRET_KEY.Declared = true, want false")
+	}
+	if !stripe.Used || len(stripe.UsedIn) != 1 || stripe.UsedIn[0].File != "src/payments.ts" || stripe.UsedIn[0].Line != 21 {
+		t.Errorf("STRIPE_SECRET_KEY usage = %+v, want one usage at src/payments.ts:21", stripe)
 	}
 }
 

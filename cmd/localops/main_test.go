@@ -121,6 +121,9 @@ func TestRun_ProjectInspect(t *testing.T) {
 		"Git repository: false",
 		"Go module: true",
 		"github.com/example/foo",
+		"Technologies",
+		"Language",
+		"Go",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("output = %q, want it to contain %q", got, want)
@@ -360,6 +363,73 @@ func TestRun_Environment_ContractAndLocalFiles(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("output = %q, want it to contain %q", got, want)
 		}
+	}
+}
+
+func TestRun_Environment_UsedDeclaredAndUndeclared(t *testing.T) {
+	projectDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(projectDir, ".env.example"), []byte("DATABASE_URL=x\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	src := "export const url = process.env.DATABASE_URL;\nconst key = process.env.STRIPE_SECRET_KEY;\n"
+	if err := os.WriteFile(filepath.Join(projectDir, "app.ts"), []byte(src), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	var out bytes.Buffer
+	if err := run([]string{"environment", projectDir}, failingStoreFunc(), &out); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+
+	got := out.String()
+	for _, want := range []string{
+		"[MISSING] DATABASE_URL (used: app.ts:1)",
+		"[UNDECLARED] STRIPE_SECRET_KEY (used: app.ts:2)",
+		"0 satisfied, 1 missing, 1 undeclared",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output = %q, want it to contain %q", got, want)
+		}
+	}
+}
+
+func TestRun_Environment_DeclaredNoSupportedUsageFound(t *testing.T) {
+	projectDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(projectDir, ".env.example"), []byte("LEGACY_FEATURE=x\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	var out bytes.Buffer
+	if err := run([]string{"environment", projectDir}, failingStoreFunc(), &out); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+
+	got := out.String()
+	if !strings.Contains(got, "[MISSING] LEGACY_FEATURE (no supported static usage found)") {
+		t.Errorf("output = %q, want the cautious no-usage wording, never \"unused\"", got)
+	}
+	if strings.Contains(got, "LEGACY_FEATURE unused") {
+		t.Errorf("output = %q, must never overclaim a variable is unused", got)
+	}
+}
+
+func TestRun_Environment_NoContractButUsageDetected(t *testing.T) {
+	projectDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(projectDir, "db.ts"), []byte("process.env.DATABASE_URL;\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	var out bytes.Buffer
+	if err := run([]string{"environment", projectDir}, failingStoreFunc(), &out); err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+
+	got := out.String()
+	if !strings.Contains(got, "No environment contract detected.") {
+		t.Errorf("output = %q, want the no-contract message to still appear", got)
+	}
+	if !strings.Contains(got, "[UNDECLARED] DATABASE_URL (used: db.ts:1)") {
+		t.Errorf("output = %q, want the undeclared usage to still be reported", got)
 	}
 }
 

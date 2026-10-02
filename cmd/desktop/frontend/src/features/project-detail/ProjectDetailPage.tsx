@@ -1,7 +1,6 @@
 import { ArrowLeft } from "lucide-react";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { HealthBadge, useProjectDetailQuery } from "@/entities/project";
-import { Badge } from "@/shared/ui/atoms/Badge";
+import { CompactTechStack, HealthBadge, useProjectDetailQuery } from "@/entities/project";
 import { MonoText } from "@/shared/ui/atoms/MonoText";
 import { formatProjectPath } from "@/shared/lib/formatProjectPath";
 import { PROJECT_DETAIL_TABS, PROJECT_DETAIL_TAB_LABELS } from "./model/tabs";
@@ -40,12 +39,12 @@ export function ProjectDetailPage() {
               {formatProjectPath(detail.path)}
             </MonoText>
             {!isUnavailable && (
-              <div className="mt-0.5 flex flex-wrap gap-1.5">
-                {detail.technologies?.map((tech) => (
-                  <Badge key={tech}>{tech}</Badge>
-                ))}
-                {detail.packageManager ? <Badge>{detail.packageManager}</Badge> : null}
-              </div>
+              <CompactTechStack
+                className="mt-0.5"
+                technologies={detail.technologies}
+                moreTechnologies={detail.moreTechnologies}
+                packageManager={detail.packageManager}
+              />
             )}
           </div>
         )}

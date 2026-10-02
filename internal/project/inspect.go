@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"golang.org/x/mod/modfile"
+
+	"github.com/msiuda/localops/internal/technology"
 )
 
 // Inspection is the basic metadata LocalOps can determine about a project
@@ -28,6 +30,12 @@ type Inspection struct {
 	NodeScriptTypecheck        bool
 	NodeScriptTest             bool
 	NodeScriptBuild            bool
+	// Technologies is the structured Technology Intelligence detection
+	// result for this project: every language, runtime, platform, and
+	// framework LocalOps found evidence for, with that evidence. It is
+	// additive to the fields above, which Doctor's existing per-ecosystem
+	// checks continue to key off directly; nothing here replaces them.
+	Technologies technology.Result
 }
 
 // Inspect reads basic, read-only metadata about the project at path.
@@ -76,6 +84,11 @@ func Inspect(path string) (Inspection, error) {
 	_, hasTestScript := pkg.Scripts["test"]
 	_, hasBuildScript := pkg.Scripts["build"]
 
+	technologies, err := technology.Detect(proj.Path)
+	if err != nil {
+		return Inspection{}, fmt.Errorf("inspect %q: %w", proj.Path, err)
+	}
+
 	return Inspection{
 		Name:                       proj.Name,
 		Path:                       proj.Path,
@@ -92,6 +105,7 @@ func Inspect(path string) (Inspection, error) {
 		NodeScriptTypecheck:        hasTypecheckScript,
 		NodeScriptTest:             hasTestScript,
 		NodeScriptBuild:            hasBuildScript,
+		Technologies:               technologies,
 	}, nil
 }
 

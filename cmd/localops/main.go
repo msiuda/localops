@@ -13,6 +13,7 @@ import (
 	"github.com/msiuda/localops/internal/overview"
 	"github.com/msiuda/localops/internal/project"
 	"github.com/msiuda/localops/internal/storage"
+	"github.com/msiuda/localops/internal/technology"
 	"github.com/msiuda/localops/internal/validation"
 )
 
@@ -152,7 +153,67 @@ func runProjectInspect(args []string, out io.Writer) error {
 		fmt.Fprintf(out, "Declared package manager: %s\n", insp.NodeDeclaredPackageManager)
 	}
 
+	renderTechnologies(out, insp.Technologies)
+
 	return nil
+}
+
+// renderTechnologies prints the Technology Intelligence detection result
+// grouped by kind, followed by a concise evidence list. It is a pure
+// presentation step, kept separate from detection itself, and never prints
+// a manifest's full contents or any secret-shaped value.
+func renderTechnologies(out io.Writer, result technology.Result) {
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "Technologies")
+
+	if len(result.Detected) == 0 {
+		fmt.Fprintln(out, "  None detected")
+		return
+	}
+
+	groups := []struct {
+		label string
+		kind  technology.Kind
+	}{
+		{"Language", technology.KindLanguage},
+		{"Runtime", technology.KindRuntime},
+		{"Platform", technology.KindPlatform},
+		{"Frameworks", technology.KindFramework},
+	}
+
+	for _, g := range groups {
+		var names []string
+		for _, d := range result.Detected {
+			if d.Kind == g.kind {
+				names = append(names, d.Name)
+			}
+		}
+		if len(names) == 0 {
+			continue
+		}
+		fmt.Fprintf(out, "  %s\n", g.label)
+		for _, name := range names {
+			fmt.Fprintf(out, "    %s\n", name)
+		}
+	}
+
+	fmt.Fprintln(out, "  Evidence")
+	for _, d := range result.Detected {
+		for _, e := range d.Evidence {
+			if e.Detail != "" {
+				fmt.Fprintf(out, "    %s — %s (%s)\n", d.Name, e.File, e.Detail)
+			} else {
+				fmt.Fprintf(out, "    %s — %s\n", d.Name, e.File)
+			}
+		}
+	}
+
+	if len(result.Findings) > 0 {
+		fmt.Fprintln(out, "  Findings")
+		for _, f := range result.Findings {
+			fmt.Fprintf(out, "    %s: %s\n", f.Source, f.Detail)
+		}
+	}
 }
 
 func runDoctor(args []string, out io.Writer) error {
@@ -437,61 +498,104 @@ func renderEnvironment(out io.Writer, result environment.Result) {
 	fmt.Fprintln(out, "LocalOps Environment")
 	fmt.Fprintf(out, "Project: %s\n\n", result.Path)
 
-	if len(result.ContractSources) == 0 {
+	hasContract := len(result.ContractSources) > 0
+
+	if !hasContract {
 		fmt.Fprintln(out, "No environment contract detected.")
 		fmt.Fprintln(out)
 		fmt.Fprintln(out, "Supported contract files:")
 		fmt.Fprintln(out, "  .env.example")
 		fmt.Fprintln(out, "  .env.sample")
 		fmt.Fprintln(out, "  .env.template")
-		return
-	}
+		if len(result.Variables) == 0 {
+			return
+		}
+		fmt.Fprintln(out)
+		fmt.Fprintln(out, "Source usage was detected even though no contract declares it; local and")
+		fmt.Fprintln(out, "process environment are not inspected without a declared contract.")
+	} else {
+		fmt.Fprintln(out, "Contract sources")
+		for _, s := range result.ContractSources {
+			fmt.Fprintf(out, "  %s — %d %s\n", s.File, s.VariableCount, pluralizeVariables(s.VariableCount))
+		}
+		fmt.Fprintln(out)
 
-	fmt.Fprintln(out, "Contract sources")
-	for _, s := range result.ContractSources {
-		fmt.Fprintf(out, "  %s — %d %s\n", s.File, s.VariableCount, pluralizeVariables(s.VariableCount))
-	}
-	fmt.Fprintln(out)
+		processEnvUsed := false
+		for _, v := range result.Variables {
+			if v.Source == "process environment" {
+				processEnvUsed = true
+				break
+			}
+		}
 
-	processEnvUsed := false
-	for _, v := range result.Variables {
-		if v.Source == "process environment" {
-			processEnvUsed = true
-			break
+		fmt.Fprintln(out, "Local sources")
+		for _, s := range result.LocalSources {
+			fmt.Fprintf(out, "  %s — %d %s\n", s.File, s.VariableCount, pluralizeVariables(s.VariableCount))
+		}
+		if processEnvUsed {
+			fmt.Fprintln(out, "  process environment")
 		}
 	}
 
-	fmt.Fprintln(out, "Local sources")
-	for _, s := range result.LocalSources {
-		fmt.Fprintf(out, "  %s — %d %s\n", s.File, s.VariableCount, pluralizeVariables(s.VariableCount))
-	}
-	if processEnvUsed {
-		fmt.Fprintln(out, "  process environment")
-	}
 	fmt.Fprintln(out)
-
 	fmt.Fprintln(out, "Variables")
-	var satisfied, missing int
+	var satisfied, missing, undeclared int
 	for _, v := range result.Variables {
-		if v.Satisfied {
+		var tag string
+		switch {
+		case !v.Declared:
+			tag = "[UNDECLARED]"
+			undeclared++
+		case v.Satisfied:
+			tag = "[OK]"
 			satisfied++
-			fmt.Fprintf(out, "[OK] %s — %s\n", v.Name, v.Source)
-			continue
+		default:
+			tag = "[MISSING]"
+			missing++
 		}
-		missing++
-		fmt.Fprintf(out, "[MISSING] %s\n", v.Name)
+
+		line := fmt.Sprintf("%s %s", tag, v.Name)
+		if v.Declared && v.Satisfied {
+			line += fmt.Sprintf(" — %s", v.Source)
+		}
+		if usage := formatUsageLocations(v.UsedIn); usage != "" {
+			line += " (used: " + usage + ")"
+		} else {
+			line += " (no supported static usage found)"
+		}
+		fmt.Fprintln(out, line)
 	}
 
 	fmt.Fprintln(out)
-	fmt.Fprintf(out, "%d satisfied, %d missing\n", satisfied, missing)
+	fmt.Fprintf(out, "%d satisfied, %d missing, %d undeclared\n", satisfied, missing, undeclared)
 
 	if len(result.Findings) > 0 {
 		fmt.Fprintln(out)
 		fmt.Fprintln(out, "Findings")
 		for _, f := range result.Findings {
-			fmt.Fprintf(out, "- %s: line %d %s\n", f.Source, f.Line, f.Detail)
+			if f.Line > 0 {
+				fmt.Fprintf(out, "- %s: line %d %s\n", f.Source, f.Line, f.Detail)
+			} else {
+				fmt.Fprintf(out, "- %s: %s\n", f.Source, f.Detail)
+			}
 		}
 	}
+}
+
+// formatUsageLocations returns a concise, deterministic rendering of a
+// variable's detected usage locations: empty when there are none, the
+// single location when there is exactly one, and the first location plus
+// a compact count of the rest when there are more — so a variable used
+// across dozens of files never explodes the output.
+func formatUsageLocations(usedIn []environment.Usage) string {
+	if len(usedIn) == 0 {
+		return ""
+	}
+	first := fmt.Sprintf("%s:%d", usedIn[0].File, usedIn[0].Line)
+	if len(usedIn) == 1 {
+		return first
+	}
+	return fmt.Sprintf("%s, +%d more", first, len(usedIn)-1)
 }
 
 // pluralizeVariables returns "variable" or "variables" depending on n.
@@ -574,10 +678,20 @@ it declares it expects (via .env.example, .env.sample, or .env.template),
 and which are currently satisfied by a local env file (.env.local, .env)
 or the process environment.
 
-This is read-only. It never creates, copies, or modifies any env file,
-never injects variables into the process, and never prints, stores, or
-otherwise exposes a variable's value — only variable names, source
-filenames, and whether each is present are shown.
+It also scans the project's own Go and JavaScript/TypeScript source for
+statically recognizable environment-variable usage (os.Getenv/LookupEnv;
+process.env and import.meta.env, dot or static bracket access), and
+correlates it with the contract: a variable can be used, declared, and/or
+satisfied independently. This scan runs even without a declared contract,
+in which case local env files and the process environment are never
+inspected. It is conservative: dynamic or unrecognized access is not
+reported, and "no supported static usage found" never claims a variable
+is definitely unused.
+
+This is read-only. It never creates, copies, or modifies any env or
+source file, never injects variables into the process, and never prints,
+stores, or otherwise exposes a variable's value — only variable names,
+source filenames, line numbers, and whether each is present are shown.
 `
 
 // isHelpFlag reports whether arg requests help rather than naming a

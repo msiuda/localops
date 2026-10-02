@@ -11,6 +11,11 @@ const row = "flex items-center justify-between gap-4";
 const label = "text-body text-text-secondary";
 const value = "text-body font-semibold text-text-primary";
 
+// Cap badges per Stack row so a project with many detected frameworks
+// never turns the row into badge soup — the rest collapse into a single
+// restrained "+N" badge instead.
+const MAX_BADGES_PER_GROUP = 4;
+
 /**
  * A compact "understand this project's local health in a few seconds"
  * summary — a two-column workspace (stack / diagnostics) at wide content
@@ -23,18 +28,31 @@ export function OverviewSection({ detail }: OverviewSectionProps) {
     <div className="grid grid-cols-1 items-start gap-5 min-[760px]:grid-cols-2">
       <section className={`${group} min-[760px]:row-span-2`}>
         <SectionHeader>Stack</SectionHeader>
-        <div className={row}>
-          <span className={label}>Technologies</span>
-          {detail.technologies && detail.technologies.length > 0 ? (
-            <div className="flex flex-wrap justify-end gap-1.5">
-              {detail.technologies.map((tech) => (
-                <Badge key={tech}>{tech}</Badge>
-              ))}
-            </div>
-          ) : (
+        {detail.technologyGroups && detail.technologyGroups.length > 0 ? (
+          detail.technologyGroups.map((g) => {
+            const names = g.names ?? [];
+            return (
+              <div className={row} key={g.label}>
+                <span className={label}>{g.label}</span>
+                <div className="flex flex-wrap justify-end gap-1.5">
+                  {names.slice(0, MAX_BADGES_PER_GROUP).map((name) => (
+                    <Badge key={name}>{name}</Badge>
+                  ))}
+                  {names.length > MAX_BADGES_PER_GROUP && (
+                    <Badge title={names.slice(MAX_BADGES_PER_GROUP).join(", ")}>
+                      +{names.length - MAX_BADGES_PER_GROUP}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          <div className={row}>
+            <span className={label}>Technologies</span>
             <span className="text-text-muted text-micro">None detected</span>
-          )}
-        </div>
+          </div>
+        )}
         <div className={row}>
           <span className={label}>Package manager</span>
           <span className={value}>{detail.packageManager || "—"}</span>
@@ -71,7 +89,18 @@ export function OverviewSection({ detail }: OverviewSectionProps) {
                 {env.missingCount > 0 ? env.missingCount : "None"}
               </span>
             </div>
+            {env.undeclaredCount > 0 && (
+              <div className={row}>
+                <span className={label}>Undeclared usage</span>
+                <span className={`${value} text-danger`}>{env.undeclaredCount}</span>
+              </div>
+            )}
           </>
+        ) : env.undeclaredCount > 0 ? (
+          <div className={row}>
+            <span className={label}>Undeclared usage</span>
+            <span className={`${value} text-danger`}>{env.undeclaredCount}</span>
+          </div>
         ) : (
           <p className="text-text-muted text-micro m-0">No Environment Contract declared.</p>
         )}

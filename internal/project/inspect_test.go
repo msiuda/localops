@@ -441,3 +441,30 @@ func TestInspect_MissingPath(t *testing.T) {
 		t.Fatal("Inspect() error = nil, want error for missing path")
 	}
 }
+
+func TestInspect_TechnologiesPopulated(t *testing.T) {
+	dir := t.TempDir()
+	content := `{"name": "example-package", "dependencies": {"react": "^18.0.0"}}`
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	insp, err := project.Inspect(dir)
+	if err != nil {
+		t.Fatalf("Inspect() error = %v", err)
+	}
+
+	var names []string
+	for _, d := range insp.Technologies.Detected {
+		names = append(names, d.Name)
+	}
+	found := false
+	for _, n := range names {
+		if n == "React" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("Technologies.Detected = %v, want React among them", names)
+	}
+}

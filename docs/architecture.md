@@ -190,6 +190,40 @@ Do not create a plugin system for detectors during the initial milestone.
 
 A simple collection of explicit detection functions is preferred until extensibility becomes an actual problem.
 
+`Inspection` additionally carries `Technologies`, the structured Technology Intelligence result from `internal/technology` (see below), computed by `Inspect` alongside its existing Git/Go/Node.js-specific fields. This is additive, not a replacement: Doctor's existing checks continue to key off `HasGoMod`, `IsNodeProject`, and the other specific fields directly, and nothing here changes that.
+
+---
+
+## Technology module
+
+The `technology` package identifies the languages, runtimes, platforms, and frameworks a project is built with, and the evidence supporting each detection. It is a shared, cross-cutting layer — not a per-capability concern — because "what is this project built with" is a fact every capability (Environment today; Doctor, Validation, Runtime, and CI/deployment comparison later) needs to ask, and it should be answered once, consistently, rather than re-derived independently by each one.
+
+`technology` depends on nothing else in this module beyond the standard library and `golang.org/x/mod` (already a dependency, for Go module parsing). Nothing it does requires a registered project, a desktop DTO, or any other capability's types — `Detect(root string)` takes a plain filesystem path and returns a plain result, so a future Project Discovery feature can call it directly against candidate folders without this package changing:
+
+```text
+technology
+  (stdlib + golang.org/x/mod only)
+
+project
+  └── technology
+
+environment
+  └── technology
+
+CLI / desktop
+  └── project, environment
+```
+
+Critically, `internal/technology` never depends on `internal/environment`, `internal/doctor`, `internal/validation`, or `internal/project` — only those capabilities depend on it, one-way. See "Module-local extension contracts" below for why `internal/technology` does not, and will not, grow into a universal capability interface.
+
+Detection reads only known root-level manifest/marker files (`package.json`, `go.mod`, `composer.json`, `Cargo.toml`, `pom.xml`/`build.gradle`/`build.gradle.kts`, `*.csproj`, `Gemfile`, `CMakeLists.txt`, and so on) — it never walks a project's full source tree; that remains Environment's own, separate concern. A manifest that exists but cannot be read or parsed becomes a Finding naming only that file, never a fatal error, so one bad manifest never hides every other detected technology.
+
+Every `Detected` technology carries a stable `ID`, a display `Name`, a `Kind` (`language`, `runtime`, `platform`, or `framework` — the smallest set that reflects how LocalOps actually groups and displays technologies, not a general taxonomy), and `Evidence` (safe file/detail pairs — never a manifest's full contents or a secret-shaped value). Framework detection is deliberately conservative: it requires an authoritative dependency declaration (e.g. composer.json's `require` listing `laravel/framework`), never a convention file's mere presence (e.g. an `artisan` file alone) or a source-extension guess, in line with the principle that false-positive prevention matters more than claiming broad coverage. For formats with no parser in LocalOps's dependency tree (TOML, Gradle's Groovy/Kotlin DSLs, Ruby's Gemfile), detection reads a small, conservative token check rather than becoming a parser for that format or adding a new dependency.
+
+The same conservatism applies to a manifest's ecosystem evidence versus its language evidence: `javascript.go`'s detector treats `package.json` as proof of the Node.js/npm *ecosystem*, not automatically also of JavaScript as a *language* — when TypeScript evidence (`tsconfig.json`, or a `typescript` dependency) is present, JavaScript is not redundantly reported alongside it. Node.js itself is reported either way, since `package.json`'s presence is genuine runtime evidence regardless of which language sits on top of it.
+
+Detectors are a static, built-in list (`builtinDetectors`), one per ecosystem family, in their own file (`javascript.go`, `python.go`, `php.go`, `go.go`, `rust.go`, `java.go`, `dotnet.go`, `ruby.go`, `kotlin.go`, `cpp.go`). Adding a future ecosystem means adding its own detector file and appending one line to that list — no existing detector needs to change, and there is no reflection, init-based registration, or dynamic plugin loading.
+
 ---
 
 ## Overview module
@@ -245,25 +279,83 @@ Command execution uses `os/exec` in production, with the working directory set e
 
 ## Environment module
 
-The `environment` package analyzes a project's Environment Contract: which environment variables it declares it expects (via `.env.example`, `.env.sample`, or `.env.template`), and which are currently satisfied by a local env file (`.env.local`, `.env`) or the process environment.
+The `environment` package analyzes a project's Environment Contract: which environment variables it declares it expects (via `.env.example`, `.env.sample`, or `.env.template`), which are currently satisfied by a local env file (`.env.local`, `.env`) or the process environment, and which environment variables the project's own source code statically and recognizably uses.
 
-Environment depends only on `project` (for path validation). Nothing else depends on Environment in this milestone; it is not integrated into Validation or Overview:
+Environment depends on `project` (for path validation) and `technology` (for its Technology Intelligence detection result, used only to gate framework-specific usage forms — see "Source usage scanning" below). Nothing else depends on Environment in this milestone; it is not integrated into Validation or Overview:
 
 ```text
 environment
-  └── project
+  ├── project
+  └── technology
 
 CLI
   └── environment
 ```
 
-Environment is read-only, like project inspection and most of Doctor. It never creates, copies, or modifies any env file, and never injects a variable into the process.
+`internal/technology` never depends back on `internal/environment` — the dependency runs one way, since technology identity is shared cross-cutting context that Environment consumes, not something Environment owns or that depends on Environment's own behavior.
 
-Environment must never interpret, store, print, persist, or otherwise expose an environment variable's value. An env file's bytes must be read from disk to identify its declared keys, but a value is never retained past that point; only variable names, source filenames, and presence/absence are represented in its result model, and this is enforced by the model's shape (there is no field capable of holding a value), not only by convention. The process-environment lookup seam's function type returns only a boolean, never the value `os.LookupEnv` would otherwise expose.
+Environment is read-only, like project inspection and most of Doctor. It never creates, copies, or modifies any env or source file, and never injects a variable into the process.
 
-A malformed line in a source file becomes a Finding (source file and line number only, never the line's contents), not a fatal error; a scanning failure (e.g. a line exceeding the fixed size limit) is instead an explicit error naming only the source file. Only a genuine failure to read a discovered source file (for example, a permission error) is otherwise a command error.
+Environment must never interpret, store, print, persist, or otherwise expose an environment variable's value. An env file's bytes must be read from disk to identify its declared keys, but a value is never retained past that point; only variable names, source filenames, line numbers, and presence/absence are represented in its result model, and this is enforced by the model's shape (there is no field capable of holding a value), not only by convention. The process-environment lookup seam's function type returns only a boolean, never the value `os.LookupEnv` would otherwise expose.
 
-If none of the supported contract files exist, Environment returns the no-contract result immediately, without reading `.env`/`.env.local` or querying the process environment at all — both for correctness and to avoid unnecessary access to files that may carry secrets.
+A malformed line in a source file becomes a Finding (source file and line number only, never the line's contents), not a fatal error; a scanning failure (e.g. a line exceeding the fixed size limit) is instead an explicit error naming only the source file. Only a genuine failure to read a discovered contract/local source file (for example, a permission error) is otherwise a command error.
+
+If none of the supported contract files exist, local env files and the process environment are never read or queried at all — both for correctness and to avoid unnecessary access to files that may carry secrets. Source-usage scanning is the one exception that still runs in this case, since it reads only project source, never a file that could carry a secret value.
+
+### Source usage scanning
+
+Source-usage scanning covers all ten ecosystem families `internal/technology` detects, split by responsibility rather than crammed into one file:
+
+```text
+environment/
+  usage.go              usageScanner contract, traversal, dispatch, aggregation
+  usage_lex.go           shared lexer cursor (lexCursor, cLexer, hashLexer)
+  usage_clike.go          generic literal-call scanner (Java, Kotlin, C#, C, C++)
+  usage_go.go            Go: go/parser/go/ast recognition
+  usage_javascript.go    JavaScript/TypeScript: lexical scanner
+  usage_python.go        Python: lexical scanner, import-aware
+  usage_php.go           PHP: lexical scanner, Laravel gated by detection
+  usage_symfony.go       Symfony: config-file scanner, gated by detection
+  usage_ruby.go          Ruby: lexical scanner
+  usage_rust.go          Rust: generic scanner + import-aware bare form
+  usage_java.go          Java: generic scanner
+  usage_kotlin.go        Kotlin: generic scanner
+  usage_csharp.go        C#: generic scanner
+  usage_c.go             C: generic scanner
+  usage_cpp.go           C++: generic scanner
+```
+
+`usage.go` owns `scanSourceUsages(root, readFile, detected)` (called from `analyze` after contract parsing and before local-file resolution), the `usageScanner` contract, and the built-in scanner list — see "Module-local extension contracts" below for why that contract exists and what it deliberately does not try to be. It recurses from the project root with **one** `filepath.WalkDir` pass — never one traversal per language — skipping `.git`, `node_modules`, `vendor`, `dist`, `build`, `coverage`, `.next`, `target`, `obj`, `.gradle`, `.idea`, `.vscode`, `__pycache__`, `.venv`, and `venv`, never following symlinks, dispatching each file to whichever built-in scanner's `supports(path)` returns true, up to a fixed 1 MiB size bound (`maxSourceFileBytes`, the same role `maxEnvLineBytes` plays for env-style lines). `bin` is deliberately not in that ignore list: it is generated output in some ecosystems but holds genuine project source/scripts in others (Ruby's `bin/rails`, Symfony's `bin/console`), so it is never ignored globally. Traversal order is deterministic (`WalkDir` visits entries in lexical order), so detected usages are always reported in a stable order.
+
+`detected map[technology.ID]bool` — computed once per `Analyze` call from `technology.Detect` — is threaded through every scanner's `scan` call. Nearly every scanner ignores it; it exists specifically so a framework-specific form is recognized only when that framework was actually detected, never merely because the syntax looks right:
+
+- **Laravel's `env("NAME")`** (`usage_php.go`) is only recognized when `technology.IDLaravel` is in `detected` — unlike `getenv`/`$_ENV`/`$_SERVER`, which are unconditionally safe PHP forms, a bare `env(...)` call is an ordinary-looking function name outside a Laravel context.
+- **Symfony's `%env(NAME)%`** (`usage_symfony.go`) is only recognized when `technology.IDSymfony` is detected, and only in YAML/XML configuration files — this is framework-specific configuration scanning, never generic YAML/XML/CI-file scanning.
+
+All ten scanners share the same conservative design principle (false negatives on exotic syntax are preferred over false positives), but lean on different lexical machinery depending on how much their language's comment/string syntax genuinely has in common with another supported language:
+
+- **Go** (`usage_go.go`): the standard library's own `go/parser`/`go/ast`, resolving `os.Getenv`/`os.LookupEnv`'s base identifier against the file's actual `os` import (plain or a single-level alias). AST-based static recognition, not project-wide semantic analysis.
+- **JavaScript/TypeScript** (`usage_javascript.go`): its own lexer (`jsScanner`, embedding the shared `cLexer`) with bracket-access handling no other language needs in the same shape — `process.env`/`import.meta.env`, dot or static bracket access.
+- **A shared generic literal-call scanner** (`usage_clike.go`'s `findLiteralCallUsages`, built on the shared `cLexer`) backs **Java**, **Kotlin**, **C#**, **C**, and **C++** — `System.getenv(...)`, `Environment.GetEnvironmentVariable(...)`, and `getenv(...)`/`std::getenv(...)` are all exactly the same shape (a fixed call prefix plus one string-literal argument) over identical C-style comment/string rules, so one scanner parameterized by each language's prefix(es) replaces five near-identical hand-written ones. A qualifying namespace prefix (`System.` before `Environment...`, `std::` before `getenv`) never breaks the identifier-boundary check, so both the qualified and bare forms are recognized by a single prefix.
+- **Rust** (`usage_rust.go`) needs its own scanner despite being C-like lexically, because `std::env::var(...)` is always recognized but the bare `env::var(...)` form is only recognized when the file's own `use std::env` import can be found (by conservative text search) — the generic scanner has no concept of "sometimes gated by an import."
+- **Python** (`usage_python.go`) and **Ruby** (`usage_ruby.go`) share a `#`-comment lexer (`hashLexer`) instead of `cLexer`, since neither has C-style `//`/`/* */` comments; Python's scanner is additionally import-aware (`import os`/`import os as alias`) and triple-quote-aware, while Ruby's `ENV` is a global constant needing no import resolution.
+- **PHP** (`usage_php.go`) gets its own lexer (`phpLexer`) because it uniquely mixes `//`, `#`, and `/* */` comment forms in one language.
+
+An oversized, unreadable, or unparseable (invalid Go syntax) file never aborts the scan — each becomes an isolated Finding naming only the file, and scanning continues with the rest of the project. `readFile` is the same seam `Analyze` uses for contract/local files, so this failure isolation is exercised in tests without touching the real filesystem content; directory traversal itself always uses the real filesystem, since enumerating which files exist is not a value-carrying operation.
+
+### Correlation model
+
+`VariableStatus` carries two explicit boolean facts, `Declared` and `Used` (never left for a caller to infer from slice lengths), alongside the existing `DeclaredIn`/`UsedIn` evidence and `Satisfied`/`Source`. `Variables` covers the union of declared and used names, not only declared ones. `Satisfied`/`Source` are only ever meaningful when `Declared` is true — local sources and the process environment are never consulted for a name the contract does not declare, so a used-but-undeclared variable is never presented as "missing." This gives every caller (CLI, desktop DTO, frontend) the three independent correlation facts directly, without a separate state-machine/enum: used, declared, satisfied.
+
+### Module-local extension contracts
+
+LocalOps does not have a universal "Technology" plugin interface or dynamic plugin system, and is not planning to build one. A capability earns its own small, module-local extension contract (an unexported interface at the point of consumption, with a static, explicitly registered list of built-in implementations — no runtime plugin loading, reflection, `init()`-based registration, or global mutable registry) only once it already has multiple genuinely different implementations demonstrating a real shared shape, not in anticipation of one.
+
+`internal/environment`'s `usageScanner` (`supports(path) bool`; `scan(path, content, detected) ([]usageHit, []Finding)`) was the first instance of this pattern: it exists because JS/TS lexical scanning and Go AST scanning were already two real implementations behind one shared need. Adding a future language means adding its own `usage_<language>.go` and appending one line to `builtinUsageScanners` — the existing scanners never need to change.
+
+`internal/technology`'s `detector` (`detect(root, readFile) ([]Detected, []Finding)`) is the second instance: it exists because JSON-manifest parsing (JavaScript, PHP), Go's own AST-adjacent `go.mod` format, and plain conservative text-token checks (Python, Rust, Ruby, Gradle/Maven) were already several genuinely different implementations behind the one shared need of "what technology does this project use." Both contracts are deliberately small, module-local, and consumer-owned — `technology.detector` has no method for scanning source usage, and `environment.usageScanner` has no method for identifying a project's languages; each capability asks the other only for the one small thing it actually needs (Environment asks `technology.Detect` for a `map[technology.ID]bool`, nothing more).
+
+Other LocalOps capabilities (project discovery, runtime detection, CI inspection, and so on) are expected to define their own equally small, independent contracts the same way, if and when they accumulate multiple real implementations — `ProjectDetector`, `RuntimeDetector`, `CIInspector`, or whatever name fits. There is no shared "Technology" interface binding these together across capabilities, and none should be introduced speculatively: composition of small, concrete, consumer-owned contracts over one god-interface.
 
 ---
 
@@ -294,7 +386,9 @@ React frontend
 
 Its `Service.GetOverview` loads registered projects from `storage`, calls the existing `overview.Build`, and converts each `overview.ProjectResult` into a small UI-facing DTO (`ProjectCard`): name, path, health, detected technologies, package manager, issue count, and concise failed-check findings — never raw `project.Inspection`/`doctor.Report` structures, and never secret or environment-variable values.
 
-`Service.GetProjectDetail(path)` is the same pattern for a single project's detail view: it first confirms `path` belongs to a project already in `storage` (never an arbitrary unregistered path), then composes the existing `overview.Build` (for health/technologies/package manager/the full Doctor report) and `environment.Analyze` (for the Environment Contract) into a small `ProjectDetail` DTO. An `environment.Analyze` failure is carried as `Environment.Error` rather than failing the whole detail, so Overview/Doctor information for the project is never hidden by an Environment failure. `ProjectDetail`'s Environment fields mirror `environment.Result`'s own shape — names, source filenames, counts, and satisfied/missing booleans — and are structurally incapable of carrying a variable's value, matching the Environment module's own security model. `ProjectDetail` carries no Validation preview or plan: Validation is not runnable from the desktop app yet, and this package does not recreate `internal/validation`'s decisions to speculatively describe what it would do.
+`Service.GetProjectDetail(path)` is the same pattern for a single project's detail view: it first confirms `path` belongs to a project already in `storage` (never an arbitrary unregistered path), then composes the existing `overview.Build` (for health/technologies/package manager/the full Doctor report) and `environment.Analyze` (for the Environment Contract and source usage) into a small `ProjectDetail` DTO. An `environment.Analyze` failure is carried as `Environment.Error` rather than failing the whole detail, so Overview/Doctor information for the project is never hidden by an Environment failure. `ProjectDetail`'s Environment fields mirror `environment.Result`'s own shape — names, source filenames, line numbers, counts, and declared/used/satisfied booleans — and are structurally incapable of carrying a variable's value, matching the Environment module's own security model. `MissingCount` and `UndeclaredCount` are computed separately (only declared-and-unsatisfied, and only used-and-undeclared, respectively) so an undeclared usage can never inflate the missing-variable count. `ProjectDetail` carries no Validation preview or plan: Validation is not runnable from the desktop app yet, and this package does not recreate `internal/validation`'s decisions to speculatively describe what it would do.
+
+`compactTechnologySummary` is the single, backend-owned policy for the small technology summary both `ProjectCard` and `ProjectDetail` expose (`Technologies`, capped at `maxCompactTechnologies`, plus `MoreTechnologies` for the remainder) — priority-ordered language, then framework, then runtime/platform, with Git deliberately excluded (it is repository metadata from `project.Inspection.IsGitRepository`, not a Technology Intelligence fact). Before ordering/capping, `compactFrameworkPrecedence` filters out a framework whose more-identifying counterpart is also detected (React when Next.js is present; Express when NestJS is present) — presentation-only, since neither the full `Detect` result nor `technologyGroups` is filtered. `ProjectDetail.TechnologyGroups` remains a separate, fuller grouped view for Overview's "Stack" section; the two intentionally hold different amounts of information, and the frontend never derives either one itself — the shared `entities/project` `CompactTechStack` component renders exactly what the backend decided (in both ProjectRow and the Project Detail header), never a second independent selection algorithm.
 
 `Service.AddProject(path)` registers a new project by calling `storage.Store.AddProject` — the single shared registration operation both the CLI's `project add` and the desktop app use, so registration behaves identically from either entry point (path resolution via `project.FromPath`, duplicate-path rejection, and persistence all live once, in `storage`, not duplicated in `internal/desktop`). `Service.PickProjectDirectory` wraps Wails v3's native `application.Get().Dialog.OpenFile()` directory picker; a user cancelling it returns an empty path and no error, which the frontend treats as "do nothing."
 

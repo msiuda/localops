@@ -2,6 +2,7 @@ package overview
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/msiuda/localops/internal/doctor"
@@ -131,7 +132,7 @@ func TestBuild_UnavailableProject(t *testing.T) {
 	if got.Err == nil {
 		t.Error("Err = nil, want the inspection error to be preserved")
 	}
-	if got.Inspection != (project.Inspection{}) {
+	if !reflect.DeepEqual(got.Inspection, project.Inspection{}) {
 		t.Errorf("Inspection = %+v, want zero value for an unavailable project", got.Inspection)
 	}
 }

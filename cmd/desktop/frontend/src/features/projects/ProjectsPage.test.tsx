@@ -22,6 +22,7 @@ function card(overrides: Partial<ProjectCard>): ProjectCard {
     path: "/tmp/demo",
     health: Health.HealthHealthy,
     technologies: [],
+    moreTechnologies: [],
     packageManager: "",
     issueCount: 0,
     findings: [],
@@ -68,6 +69,30 @@ describe("ProjectsPage", () => {
     expect(screen.getByText("path does not exist")).toBeInTheDocument();
   });
 
+  it("shows the compact technology summary with a +N overflow, never Git", async () => {
+    mockedApi.getOverview.mockResolvedValue({
+      projects: [
+        card({
+          name: "billsy-api",
+          path: "/tmp/billsy-api",
+          technologies: ["TypeScript", "NestJS", "Node.js"],
+          moreTechnologies: ["Express"],
+          packageManager: "yarn",
+        }),
+      ],
+    });
+
+    renderApp("/");
+
+    expect(await screen.findByText("billsy-api")).toBeInTheDocument();
+    expect(screen.getByText("TypeScript")).toBeInTheDocument();
+    expect(screen.getByText("NestJS")).toBeInTheDocument();
+    expect(screen.getByText("Node.js")).toBeInTheDocument();
+    expect(screen.getByText(/yarn/)).toBeInTheDocument();
+    expect(screen.getByText("+1")).toBeInTheDocument();
+    expect(screen.queryByText("Git")).not.toBeInTheDocument();
+  });
+
   it("shows the empty state with an Add Project action when there are no projects", async () => {
     mockedApi.getOverview.mockResolvedValue({ projects: [] });
 
@@ -88,6 +113,8 @@ describe("ProjectsPage", () => {
       health: Health.HealthHealthy,
       unavailableReason: "",
       technologies: [],
+      moreTechnologies: [],
+      technologyGroups: [],
       packageManager: "",
       issueCount: 0,
       doctorChecks: [],
@@ -98,6 +125,7 @@ describe("ProjectsPage", () => {
         variables: [],
         findings: [],
         missingCount: 0,
+        undeclaredCount: 0,
         error: "",
       },
     });

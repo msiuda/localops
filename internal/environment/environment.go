@@ -1,6 +1,8 @@
 // Package environment analyzes a project's Environment Contract: which
-// environment variables it declares it expects, and which of those are
-// currently satisfied by a local env file or the process environment.
+// environment variables it declares it expects, which of those are
+// currently satisfied by a local env file or the process environment, and
+// which environment variables the project's own source code statically
+// and recognizably uses.
 //
 // This package never represents, prints, persists, or otherwise exposes an
 // environment variable's value. Only variable names, source filenames, and
@@ -17,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/msiuda/localops/internal/project"
+	"github.com/msiuda/localops/internal/technology"
 )
 
 // ContractSource describes a discovered contract template file and how many
@@ -33,14 +36,40 @@ type LocalSource struct {
 	VariableCount int
 }
 
-// VariableStatus is the Environment Contract outcome for a single declared
-// environment variable. It never carries the variable's value.
+// VariableStatus is the Environment outcome for a single environment
+// variable name — one that is declared by the Environment Contract,
+// statically used by the project's source code, or both. It never carries
+// the variable's value.
+//
+// Declared and Used are explicit facts rather than something a caller
+// must infer from slice lengths, so the three independent correlation
+// facts the Environment model exists to answer — declared, used,
+// satisfied — are always available directly:
+//
+//   - Used + Declared + Satisfied: healthy.
+//   - Used + Declared + !Satisfied: the declared variable is not locally
+//     satisfied.
+//   - Used + !Declared: the source uses a variable the contract never
+//     declared.
+//   - !Used + Declared: no supported static usage was found for a
+//     declared variable — not proof that it is actually unused.
 type VariableStatus struct {
 	Name string
+	// Declared reports whether any contract source declares Name.
+	Declared bool
 	// DeclaredIn lists the contract source file(s) that declare Name, in a
-	// fixed, deterministic order.
+	// fixed, deterministic order. Empty when Declared is false.
 	DeclaredIn []string
-	Satisfied  bool
+	// Used reports whether any supported static source-code usage of Name
+	// was found.
+	Used bool
+	// UsedIn lists every detected usage location, ordered by file then
+	// line. Empty when Used is false.
+	UsedIn []Usage
+	// Satisfied and Source are only ever meaningful when Declared is
+	// true: local sources and the process environment are never consulted
+	// for a variable the contract does not declare.
+	Satisfied bool
 	// Source is where Name was found to be satisfied: ".env.local", ".env",
 	// or "process environment". It is empty when Satisfied is false.
 	Source string
@@ -76,14 +105,21 @@ type lookupEnvFunc func(key string) bool
 
 // Analyze inspects the project at path for its Environment Contract: which
 // environment variables it declares it expects (via .env.example,
-// .env.sample, or .env.template), and which of those are currently
-// satisfied by a local env file (.env.local, .env) or the process
-// environment.
+// .env.sample, or .env.template), which of those are currently satisfied
+// by a local env file (.env.local, .env) or the process environment, and
+// which environment variables the project's source code statically and
+// recognizably uses (supported Go and JavaScript/TypeScript forms only).
+//
+// Source-usage scanning runs even when no Environment Contract exists, so
+// a project with no contract can still report "used but undeclared"
+// variables; it never causes local env files or the process environment
+// to be read when nothing is declared.
 //
 // An error is returned only when the project path itself cannot be
-// resolved, or when a discovered source file cannot safely be read (for
-// example, a permission error). A malformed line within a file that was
-// read is a Finding in the returned Result, not an error.
+// resolved, or when a discovered contract/local source file cannot safely
+// be read (for example, a permission error). A malformed line within a
+// file that was read, or a source file that could not be scanned, is a
+// Finding in the returned Result, not an error.
 func Analyze(path string) (Result, error) {
 	return analyze(path, os.ReadFile, lookupProcessEnv)
 }
@@ -124,50 +160,82 @@ func analyze(path string, readFile readFileFunc, lookupEnv lookupEnvFunc) (Resul
 		}
 	}
 
-	// With no declared contract, there is nothing to check local sources
-	// or the process environment for. Returning here means a project with
-	// no contract never reads .env/.env.local or queries the process
-	// environment at all, which also avoids any unnecessary access to
-	// files that may carry secrets.
-	if len(contractSources) == 0 {
-		return Result{Path: proj.Path}, nil
+	techResult, err := technology.Detect(proj.Path)
+	if err != nil {
+		return Result{}, err
 	}
+	detectedTech := make(map[technology.ID]bool, len(techResult.Detected))
+	for _, d := range techResult.Detected {
+		detectedTech[d.ID] = true
+	}
+
+	usedIn, usageFindings, err := scanSourceUsages(proj.Path, readFile, detectedTech)
+	if err != nil {
+		return Result{}, err
+	}
+	findings = append(findings, usageFindings...)
 
 	var localSources []LocalSource
 	localKeys := make(map[string]map[string]bool)
 
-	for _, name := range localFileNames {
-		keys, fileFindings, existed, err := readEnvFile(proj.Path, name, readFile)
-		if err != nil {
-			return Result{}, err
-		}
-		if !existed {
-			continue
-		}
+	// Local env files and the process environment are only ever consulted
+	// when at least one variable is declared. This preserves the existing
+	// guarantee that a project with no Environment Contract never reads
+	// .env/.env.local or queries the process environment, even when
+	// source-usage scanning did find statically used variables — both for
+	// correctness and to avoid unnecessary access to files that may carry
+	// secrets.
+	if len(declaredIn) > 0 {
+		for _, name := range localFileNames {
+			keys, fileFindings, existed, err := readEnvFile(proj.Path, name, readFile)
+			if err != nil {
+				return Result{}, err
+			}
+			if !existed {
+				continue
+			}
 
-		localSources = append(localSources, LocalSource{File: name, VariableCount: len(keys)})
-		findings = append(findings, fileFindings...)
+			localSources = append(localSources, LocalSource{File: name, VariableCount: len(keys)})
+			findings = append(findings, fileFindings...)
 
-		set := make(map[string]bool, len(keys))
-		for _, key := range keys {
-			set[key] = true
+			set := make(map[string]bool, len(keys))
+			for _, key := range keys {
+				set[key] = true
+			}
+			localKeys[name] = set
 		}
-		localKeys[name] = set
 	}
 
-	names := make([]string, 0, len(declaredIn))
+	nameSet := make(map[string]bool, len(declaredIn)+len(usedIn))
 	for name := range declaredIn {
+		nameSet[name] = true
+	}
+	for name := range usedIn {
+		nameSet[name] = true
+	}
+
+	names := make([]string, 0, len(nameSet))
+	for name := range nameSet {
 		names = append(names, name)
 	}
 	sort.Strings(names)
 
 	variables := make([]VariableStatus, 0, len(names))
 	for _, name := range names {
-		satisfied, source := resolveSource(name, localFileNames, localKeys, lookupEnv)
+		declared := len(declaredIn[name]) > 0
+
+		var satisfied bool
+		var source string
+		if declared {
+			satisfied, source = resolveSource(name, localFileNames, localKeys, lookupEnv)
+		}
 
 		variables = append(variables, VariableStatus{
 			Name:       name,
+			Declared:   declared,
 			DeclaredIn: append([]string(nil), declaredIn[name]...),
+			Used:       len(usedIn[name]) > 0,
+			UsedIn:     append([]Usage(nil), usedIn[name]...),
 			Satisfied:  satisfied,
 			Source:     source,
 		})

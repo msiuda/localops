@@ -1,9 +1,9 @@
 import { ChevronRight } from "lucide-react";
 import { Link } from "@tanstack/react-router";
-import { Badge } from "@/shared/ui/atoms/Badge";
 import { MonoText } from "@/shared/ui/atoms/MonoText";
 import { formatProjectPath } from "@/shared/lib/formatProjectPath";
 import { HealthBadge } from "./HealthBadge";
+import { CompactTechStack } from "./CompactTechStack";
 import type { ProjectCard } from "../model/types";
 
 interface ProjectRowProps {
@@ -27,7 +27,7 @@ export function ProjectRow({ project }: ProjectRowProps) {
       to="/project"
       search={{ path: project.path, tab: "overview" }}
       className="border-border bg-surface hover:border-border-strong hover:bg-surface-hover focus-visible:outline-accent grid cursor-pointer items-center gap-4 rounded-md border px-4 py-3 text-left transition-colors duration-100 focus-visible:outline-2 focus-visible:-outline-offset-1"
-      style={{ gridTemplateColumns: "minmax(180px,1fr) 180px 150px 20px" }}
+      style={{ gridTemplateColumns: "minmax(180px,1fr) 240px 150px 20px" }}
     >
       <div className="flex min-w-0 flex-col gap-1">
         <div className="flex items-center gap-2.5">
@@ -45,12 +45,11 @@ export function ProjectRow({ project }: ProjectRowProps) {
         </span>
       ) : (
         <>
-          <div className="flex min-w-0 flex-wrap gap-1.5">
-            {project.technologies?.map((tech) => (
-              <Badge key={tech}>{tech}</Badge>
-            ))}
-            {project.packageManager ? <Badge>{project.packageManager}</Badge> : null}
-          </div>
+          <CompactTechStack
+            technologies={project.technologies}
+            moreTechnologies={project.moreTechnologies}
+            packageManager={project.packageManager}
+          />
 
           <div className="flex min-w-0 flex-col items-end gap-0.5">
             {project.issueCount > 0 ? (

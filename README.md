@@ -17,6 +17,20 @@ the same registered-project data.
   - Node.js project detection (presence of `package.json` and its declared
     package name), including which package manager is in use, based on
     `pnpm-lock.yaml`, `yarn.lock`, or `package-lock.json`.
+  - **Technology Intelligence**: structured detection of the languages,
+    runtime/platform, and frameworks a project is built with, across ten
+    ecosystem families (JavaScript/TypeScript/Node.js, Python, PHP, Go,
+    Rust, Java, C#/.NET, Ruby, Kotlin, C/C++) plus their common
+    frameworks (React, Next.js, Vue, Angular, Svelte, Express, NestJS,
+    Django, Flask, FastAPI, Laravel, Symfony, Gin, Fiber, Echo, Axum,
+    Actix Web, Spring Boot, ASP.NET Core, Rails, Ktor), based only on
+    authoritative project manifests (`package.json`, `composer.json`,
+    `go.mod`, `Cargo.toml`, `pom.xml`/`build.gradle(.kts)`, `*.csproj`,
+    `Gemfile`, `CMakeLists.txt`, and similar) — never a convention file's
+    mere presence or a source-extension guess alone, to keep false
+    positives rare. Detecting a technology does not by itself mean Doctor
+    or Validation support it yet; see `docs/product.md`'s support matrix
+    for exactly what each technology currently has.
 - **Doctor**: given a project's inspection results, checks whether the
   executables required by its detected technologies (`git`, `go`, `node`,
   and its package manager) are available on your `PATH`. For each available
@@ -85,8 +99,35 @@ respect to the project being examined.
     file(s) declare or satisfy them, and presence/absence are ever shown.
     (An env file's bytes are read from disk to identify its declared
     keys, but a value is never retained past that.)
-  - It does not yet scan source code for environment variable usage (e.g.
-    `process.env` references); it only reads the declared contract files.
+  - It also scans the project's own source code for statically recognizable
+    environment-variable usage, and correlates it with the contract, so it
+    can answer not just "declared vs. satisfied" but **used, declared, and
+    satisfied** together:
+    - Supported across all ten Technology Intelligence ecosystem
+      families — Go, JavaScript/TypeScript, Python, PHP (plus Laravel's
+      `env()` and Symfony's `%env()%`, each gated by that framework
+      actually being detected), Rust, Java, Kotlin, C#, Ruby, C, and
+      C++. See `docs/product.md`'s "Environment Source Usage" section
+      for the exact recognized form per language.
+    - This scan runs even when no Environment Contract exists, so a
+      project with no contract can still report variables the source
+      uses — but it never reads `.env`/`.env.local` or the process
+      environment unless at least one variable is declared.
+    - Recognition is static and conservative: comments and ordinary string
+      contents are never matched, and a dynamic access (a variable key, or
+      any other non-literal expression) is not statically knowable and is
+      skipped — false negatives on exotic syntax are preferred over false
+      positives. A used-but-undeclared variable is reported as
+      **undeclared**, never as missing; a declared variable with no
+      detected usage is reported as "no supported static usage found",
+      never as definitively unused (it may be used dynamically, from an
+      unsupported language, or from a file LocalOps could not scan).
+    - The scan recurses from the project root, skipping `.git`,
+      `node_modules`, `vendor`, `dist`, `build`, `coverage`, `.next`,
+      `target`, `obj`, `.gradle`, `.idea`, `.vscode`, `__pycache__`,
+      `.venv`, and `venv` (deliberately not `bin`, which holds genuine
+      source/scripts in some ecosystems), never follows symlinks, and
+      only looks at each supported language's own source extensions.
 
 ## Commands
 
@@ -197,13 +238,22 @@ The desktop app implements two screens:
   Its header shows the project's name, path, health, detected
   technologies, and package manager. Below that, four sections:
   - **Overview** — a compact summary of stack, package manager, Doctor
-    issue count, and Environment contract/missing-variable status.
+    issue count, and Environment contract/missing-variable/undeclared-usage
+    status (the undeclared-usage line only appears when there is one).
   - **Doctor** — the full Doctor report (every check, not just failures):
     tool, pass/fail, detected version, and failure detail.
-  - **Environment** — the existing Environment Contract analysis: contract
-    and local source files with variable counts, each declared variable's
-    satisfied/missing status and declaring/satisfying source, and parser
-    findings. Never renders a value.
+  - **Environment** — the Environment Contract and source-usage analysis
+    as a single comparison matrix (a real `<table>`, sticky header while
+    scrolling a long variable list): **Variable / Local / Contract /
+    Usage**, with the concrete source filenames (e.g. `.env.local · .env`,
+    `.env.example`) shown once in the column headers rather than repeated
+    on every row. A used-but-undeclared variable reads **Undeclared** in
+    Contract and **Not evaluated** in Local — never **Missing**, since
+    LocalOps never checks local/process env for a name the contract
+    doesn't declare. A declared variable with no detected usage shows a
+    dash with a "no supported static usage found" tooltip, never "unused."
+    Multiple usage locations collapse to the first plus a `+N more` count.
+    Never renders a value.
   - **Validation** — an informational placeholder. Validation is **not
     runnable from the desktop app yet**: LocalOps can run a project's
     tests/builds/lint/typecheck from the CLI (`localops validate <path>`),

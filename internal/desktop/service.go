@@ -8,6 +8,7 @@ package desktop
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/msiuda/localops/internal/overview"
 	"github.com/msiuda/localops/internal/project"
 	"github.com/msiuda/localops/internal/storage"
+	"github.com/msiuda/localops/internal/technology"
 )
 
 // Health is the UI-facing project health state, mirroring overview.Health.
@@ -39,10 +41,15 @@ type Finding struct {
 // never raw internal inspection/Doctor structures, and never any
 // environment-variable value.
 type ProjectCard struct {
-	Name              string    `json:"name"`
-	Path              string    `json:"path"`
-	Health            Health    `json:"health"`
+	Name   string `json:"name"`
+	Path   string `json:"path"`
+	Health Health `json:"health"`
+	// Technologies is the compact technology summary (see
+	// compactTechnologySummary): capped, priority-ordered, Git excluded.
+	// MoreTechnologies holds every name beyond that cap, for a frontend
+	// "+N" overflow badge's tooltip — never a second badge row.
 	Technologies      []string  `json:"technologies"`
+	MoreTechnologies  []string  `json:"moreTechnologies"`
 	PackageManager    string    `json:"packageManager"`
 	IssueCount        int       `json:"issueCount"`
 	Findings          []Finding `json:"findings"`
@@ -81,14 +88,26 @@ type EnvLocalSource struct {
 	VariableCount int    `json:"variableCount"`
 }
 
-// EnvVariable is the UI-facing status of a single declared environment
-// variable. It is structurally incapable of carrying a value: every field
-// is a name, a source filename, or a boolean/status.
+// EnvUsage is a single UI-facing source-code location where a variable was
+// statically detected as used. It never carries the variable's value.
+type EnvUsage struct {
+	File string `json:"file"`
+	Line int    `json:"line"`
+}
+
+// EnvVariable is the UI-facing status of a single environment variable —
+// one that is declared by the Environment Contract, statically used by
+// the project's source code, or both. It is structurally incapable of
+// carrying a value: every field is a name, a source filename/line, or a
+// boolean/status.
 type EnvVariable struct {
-	Name       string   `json:"name"`
-	DeclaredIn []string `json:"declaredIn"`
-	Satisfied  bool     `json:"satisfied"`
-	Source     string   `json:"source"`
+	Name       string     `json:"name"`
+	Declared   bool       `json:"declared"`
+	DeclaredIn []string   `json:"declaredIn"`
+	Used       bool       `json:"used"`
+	UsedIn     []EnvUsage `json:"usedIn"`
+	Satisfied  bool       `json:"satisfied"`
+	Source     string     `json:"source"`
 }
 
 // EnvFinding is a UI-facing Environment parsing finding: a source file and
@@ -114,8 +133,13 @@ type EnvironmentSummary struct {
 	LocalSources    []EnvLocalSource    `json:"localSources"`
 	Variables       []EnvVariable       `json:"variables"`
 	Findings        []EnvFinding        `json:"findings"`
-	MissingCount    int                 `json:"missingCount"`
-	Error           string              `json:"error"`
+	// MissingCount counts only declared variables that are not locally
+	// satisfied. UndeclaredCount counts only used variables the contract
+	// never declared. They are deliberately separate: an undeclared usage
+	// must never be presented as a missing declared variable.
+	MissingCount    int    `json:"missingCount"`
+	UndeclaredCount int    `json:"undeclaredCount"`
+	Error           string `json:"error"`
 }
 
 // ProjectDetail is the UI-facing detail view of a single registered
@@ -126,15 +150,32 @@ type EnvironmentSummary struct {
 // desktop Validation execution is added, it will compose the real
 // internal/validation package instead.
 type ProjectDetail struct {
-	Name              string             `json:"name"`
-	Path              string             `json:"path"`
-	Health            Health             `json:"health"`
-	UnavailableReason string             `json:"unavailableReason"`
-	Technologies      []string           `json:"technologies"`
-	PackageManager    string             `json:"packageManager"`
-	IssueCount        int                `json:"issueCount"`
-	DoctorChecks      []DoctorCheck      `json:"doctorChecks"`
-	Environment       EnvironmentSummary `json:"environment"`
+	Name              string `json:"name"`
+	Path              string `json:"path"`
+	Health            Health `json:"health"`
+	UnavailableReason string `json:"unavailableReason"`
+	// Technologies/MoreTechnologies are the same compact summary as
+	// ProjectCard (see compactTechnologySummary), for the header.
+	// TechnologyGroups is the separate, fuller grouped picture for
+	// Overview's "Stack" section — the two are deliberately not the same
+	// amount of information.
+	Technologies     []string           `json:"technologies"`
+	MoreTechnologies []string           `json:"moreTechnologies"`
+	TechnologyGroups []TechnologyGroup  `json:"technologyGroups"`
+	PackageManager   string             `json:"packageManager"`
+	IssueCount       int                `json:"issueCount"`
+	DoctorChecks     []DoctorCheck      `json:"doctorChecks"`
+	Environment      EnvironmentSummary `json:"environment"`
+}
+
+// TechnologyGroup is one Technology Intelligence kind (e.g. "Languages",
+// "Frameworks") and the detected technology names within it, for Project
+// Detail's Overview "Stack" section. It never carries detection evidence —
+// only display names — since that section shows the fuller grouped
+// picture, not an evidence audit.
+type TechnologyGroup struct {
+	Label string   `json:"label"`
+	Names []string `json:"names"`
 }
 
 // Service is the Wails-facing desktop service. Its methods are bound to the
@@ -236,7 +277,8 @@ func toProjectDetail(pr overview.ProjectResult) ProjectDetail {
 		return detail
 	}
 
-	detail.Technologies = technologies(pr.Inspection)
+	detail.Technologies, detail.MoreTechnologies = compactTechnologySummary(pr.Inspection)
+	detail.TechnologyGroups = technologyGroups(pr.Inspection)
 	detail.PackageManager = effectivePackageManager(pr.Report)
 
 	for _, check := range pr.Report.Checks {
@@ -288,14 +330,25 @@ func toEnvironmentSummary(res environment.Result, err error) EnvironmentSummary 
 		})
 	}
 	for _, v := range res.Variables {
+		var usedIn []EnvUsage
+		for _, u := range v.UsedIn {
+			usedIn = append(usedIn, EnvUsage{File: u.File, Line: u.Line})
+		}
+
 		summary.Variables = append(summary.Variables, EnvVariable{
 			Name:       v.Name,
+			Declared:   v.Declared,
 			DeclaredIn: v.DeclaredIn,
+			Used:       v.Used,
+			UsedIn:     usedIn,
 			Satisfied:  v.Satisfied,
 			Source:     v.Source,
 		})
-		if !v.Satisfied {
+		if v.Declared && !v.Satisfied {
 			summary.MissingCount++
+		}
+		if v.Used && !v.Declared {
+			summary.UndeclaredCount++
 		}
 	}
 	for _, f := range res.Findings {
@@ -325,7 +378,7 @@ func toProjectCard(pr overview.ProjectResult) ProjectCard {
 		return card
 	}
 
-	card.Technologies = technologies(pr.Inspection)
+	card.Technologies, card.MoreTechnologies = compactTechnologySummary(pr.Inspection)
 	card.PackageManager = effectivePackageManager(pr.Report)
 
 	for _, check := range pr.Report.Checks {
@@ -338,19 +391,108 @@ func toProjectCard(pr overview.ProjectResult) ProjectCard {
 	return card
 }
 
-// technologies builds a short list of the technologies insp detected.
-func technologies(insp project.Inspection) []string {
-	var techs []string
-	if insp.IsGitRepository {
-		techs = append(techs, "Git")
+// maxCompactTechnologies caps the compact technology summary (ProjectRow,
+// Project Detail header) at a fixed, small number of badges, so a project
+// with many detected technologies never grows a row/header vertically.
+// Anything beyond the cap is summarized by the caller as a single "+N"
+// overflow, never a second badge row.
+const maxCompactTechnologies = 3
+
+// compactTechnologySummaryOrder ranks kinds for the compact summary: a
+// primary language identifies the project fastest, a strongly-detected
+// framework is the next most useful fact, and runtime/platform is
+// supporting context — the opposite priority from technologyGroups, which
+// exists to show the fuller picture, not a quick-scan identity. Git is
+// deliberately absent: it is near-universal repository metadata, not a
+// Technology Intelligence fact, and was never meant to compete with a
+// project's actual stack for one of three badge slots.
+var compactTechnologySummaryOrder = map[technology.Kind]int{
+	technology.KindLanguage:  0,
+	technology.KindFramework: 1,
+	technology.KindRuntime:   2,
+	technology.KindPlatform:  2,
+}
+
+// compactFrameworkPrecedence maps a framework ID to a more-characteristic
+// framework ID that, when also detected in the same project, better
+// identifies it for the compact summary — Next.js over the React it is
+// built on, NestJS over the Express it wraps. This is presentation-only:
+// internal/technology still reports every framework it found evidence
+// for, and both technologyGroups and the full Detect result are
+// unaffected — only the compact summary's selection is filtered.
+var compactFrameworkPrecedence = map[technology.ID]technology.ID{
+	technology.IDReact:   technology.IDNextJS,
+	technology.IDExpress: technology.IDNestJS,
+}
+
+// compactTechnologySummary builds the single, backend-owned compact
+// technology summary shared by ProjectCard and ProjectDetail — the only
+// place technology priority/capping/precedence logic lives, so
+// ProjectsPage, ProjectDetailPage, and Overview never each derive their
+// own. names is capped to maxCompactTechnologies, in priority order; more
+// holds every remaining detected name (for a frontend "+N" badge's
+// tooltip), also in priority order, so the full picture is never silently
+// discarded — it is simply not the compact view's job to show it
+// (Overview's technologyGroups is).
+func compactTechnologySummary(insp project.Inspection) (names []string, more []string) {
+	detected := insp.Technologies.Detected
+
+	present := make(map[technology.ID]bool, len(detected))
+	for _, d := range detected {
+		present[d.ID] = true
 	}
-	if insp.HasGoMod {
-		techs = append(techs, "Go")
+
+	filtered := make([]technology.Detected, 0, len(detected))
+	for _, d := range detected {
+		if winner, ok := compactFrameworkPrecedence[d.ID]; ok && present[winner] {
+			continue
+		}
+		filtered = append(filtered, d)
 	}
-	if insp.IsNodeProject {
-		techs = append(techs, "Node.js")
+
+	sort.SliceStable(filtered, func(i, j int) bool {
+		return compactTechnologySummaryOrder[filtered[i].Kind] < compactTechnologySummaryOrder[filtered[j].Kind]
+	})
+
+	for i, d := range filtered {
+		if i < maxCompactTechnologies {
+			names = append(names, d.Name)
+		} else {
+			more = append(more, d.Name)
+		}
 	}
-	return techs
+	return names, more
+}
+
+// technologyGroups builds the fuller, grouped Technology Intelligence
+// picture (languages, runtime/platform, frameworks) for Project Detail's
+// Overview "Stack" section. Each group is omitted when empty, so a project
+// with no detected frameworks never shows an empty "Frameworks" group.
+func technologyGroups(insp project.Inspection) []TechnologyGroup {
+	kinds := []struct {
+		label string
+		kind  technology.Kind
+	}{
+		{"Languages", technology.KindLanguage},
+		{"Runtime", technology.KindRuntime},
+		{"Platform", technology.KindPlatform},
+		{"Frameworks", technology.KindFramework},
+	}
+
+	var groups []TechnologyGroup
+	for _, k := range kinds {
+		var names []string
+		for _, d := range insp.Technologies.Detected {
+			if d.Kind == k.kind {
+				names = append(names, d.Name)
+			}
+		}
+		if len(names) == 0 {
+			continue
+		}
+		groups = append(groups, TechnologyGroup{Label: k.label, Names: names})
+	}
+	return groups
 }
 
 // effectivePackageManager returns the package manager Doctor actually
